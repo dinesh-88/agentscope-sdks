@@ -15,6 +15,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.flush = exports.TelemetryExporter = exports.observeSpan = exports.addArtifact = exports.observeRun = exports.AgentScopeClient = void 0;
+const instrumentation_1 = require("./instrumentation");
 var client_1 = require("./client");
 Object.defineProperty(exports, "AgentScopeClient", { enumerable: true, get: function () { return client_1.AgentScopeClient; } });
 var run_1 = require("./run");
@@ -27,3 +28,4 @@ Object.defineProperty(exports, "TelemetryExporter", { enumerable: true, get: fun
 Object.defineProperty(exports, "flush", { enumerable: true, get: function () { return exporter_1.flushPendingExports; } });
 __exportStar(require("./types"), exports);
 __exportStar(require("./instrumentation"), exports);
+(0, instrumentation_1.instrumentFetch)();

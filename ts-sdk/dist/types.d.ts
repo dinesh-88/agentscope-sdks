@@ -39,6 +39,7 @@ export interface IngestPayload {
 }
 export interface AgentScopeClientOptions {
     baseUrl?: string;
+    apiKey?: string;
     timeoutMs?: number;
 }
 export interface ObserveRunOptions {

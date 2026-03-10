@@ -1,12 +1,33 @@
-import { getRunState } from "../context";
+import { currentSpanId, getRunState } from "../context";
 import { addArtifact, observeSpan } from "../span";
 import type { FetchInstrumentationOptions } from "../types";
 
 type FetchType = typeof globalThis.fetch;
+type RequestPayload = {
+  model?: unknown;
+  messages?: unknown;
+  temperature?: unknown;
+  tools?: unknown;
+};
+type ResponsePayload = {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+  };
+};
 
 let originalFetch: FetchType | undefined;
 
 export function instrumentFetch(options: FetchInstrumentationOptions = {}): () => void {
+  if (typeof globalThis.fetch !== "function") {
+    return () => {};
+  }
+
   if (originalFetch) {
     return () => restoreFetch();
   }
@@ -24,25 +45,54 @@ export function instrumentFetch(options: FetchInstrumentationOptions = {}): () =
       return originalFetch!(input, init);
     }
 
-    const openAiRequest = captureBodies ? detectOpenAiRequest(requestDetails) : null;
+    const provider = detectProvider(requestDetails.url);
+    const llmRequest = provider ? detectLlmRequest(requestDetails) : null;
+    const requestModel = stringifyModel(llmRequest?.model);
+    const startTime = Date.now();
 
     return observeSpan(options.spanName ?? inferSpanName(requestDetails.url), async () => {
-      if (openAiRequest) {
-        addArtifact("llm.prompt", openAiRequest);
+      if (llmRequest && captureBodies) {
+        addArtifact("llm.prompt", llmRequest);
       }
 
       const response = await originalFetch!(input, init);
+      const latencyMs = Date.now() - startTime;
 
-      if (openAiRequest && captureBodies) {
+      if (llmRequest) {
         const responsePayload = await safeReadJson(response.clone());
-        if (responsePayload) {
-          addArtifact("llm.response", responsePayload);
+        const llmResponse = extractLlmResponse(responsePayload);
+        if (llmResponse && captureBodies) {
+          addArtifact("llm.response", llmResponse);
         }
+
+        const usage = responsePayload?.usage;
+        const promptTokens = coerceNumber(usage?.prompt_tokens);
+        const completionTokens = coerceNumber(usage?.completion_tokens);
+
+        return finalizeResponse(response, {
+          provider,
+          model: requestModel,
+          latencyMs,
+          promptTokens,
+          completionTokens,
+          method: requestDetails.method,
+          url: requestDetails.url,
+        });
       }
 
-      return response;
+      return finalizeResponse(response, {
+        provider,
+        model: requestModel,
+        latencyMs,
+        promptTokens: null,
+        completionTokens: null,
+        method: requestDetails.method,
+        url: requestDetails.url,
+      });
     }, {
       spanType: "http",
+      provider: provider ?? undefined,
+      model: requestModel ?? undefined,
       metadata: {
         method: requestDetails.method,
         url: requestDetails.url,
@@ -77,14 +127,41 @@ function isAgentScopeIngestUrl(url: string): boolean {
 }
 
 function inferSpanName(url: string): string {
-  if (isOpenAiCompatibleUrl(url)) {
+  if (detectProvider(url)) {
     return "llm_call";
   }
   return "fetch";
 }
 
-function isOpenAiCompatibleUrl(url: string): boolean {
-  return /\/v1\/(chat\/completions|responses)$/.test(url) || /\/chat\/completions$/.test(url);
+function detectProvider(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const host = parsed.host.toLowerCase();
+
+    if (hostname === "localhost" && parsed.port === "11434") {
+      return "ollama";
+    }
+    if (hostname === "openrouter.ai" || hostname.endsWith(".openrouter.ai")) {
+      return "openrouter";
+    }
+    if (hostname === "openai.com" || hostname.endsWith(".openai.com")) {
+      return "openai";
+    }
+    if (hostname === "anthropic.com" || hostname.endsWith(".anthropic.com")) {
+      return "anthropic";
+    }
+    if (hostname === "groq.com" || hostname.endsWith(".groq.com")) {
+      return "groq";
+    }
+    if (host === "localhost:11434") {
+      return "ollama";
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 async function readRequestDetails(
@@ -126,34 +203,91 @@ async function safeReadText(request: Request): Promise<string | null> {
   }
 }
 
-function detectOpenAiRequest(details: {
+function detectLlmRequest(details: {
   url: string;
   bodyText: string | null;
-}): Record<string, unknown> | null {
-  if (!isOpenAiCompatibleUrl(details.url) || !details.bodyText) {
+}): RequestPayload | null {
+  if (!detectProvider(details.url) || !details.bodyText) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(details.bodyText) as Record<string, unknown>;
-    if (!("model" in parsed) || !("messages" in parsed)) {
+    const parsed = JSON.parse(details.bodyText) as RequestPayload;
+    if (typeof parsed !== "object" || parsed === null) {
       return null;
     }
     return {
       model: parsed.model,
       messages: parsed.messages,
       tools: parsed.tools,
-      stream: parsed.stream,
+      temperature: parsed.temperature,
     };
   } catch {
     return null;
   }
 }
 
-async function safeReadJson(response: Response): Promise<unknown | null> {
+async function safeReadJson(response: Response): Promise<ResponsePayload | null> {
   try {
-    return await response.json();
+    return await response.json() as ResponsePayload;
   } catch {
     return null;
   }
+}
+
+function extractLlmResponse(payload: ResponsePayload | null): Record<string, unknown> | null {
+  if (!payload) {
+    return null;
+  }
+
+  return {
+    content: payload.choices?.[0]?.message?.content ?? null,
+    prompt_tokens: payload.usage?.prompt_tokens ?? null,
+    completion_tokens: payload.usage?.completion_tokens ?? null,
+  };
+}
+
+function finalizeResponse(
+  response: Response,
+  details: {
+    provider: string | null;
+    model: string | null;
+    latencyMs: number;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    method: string;
+    url: string;
+  },
+): Response {
+  const state = getRunState();
+  const spanId = currentSpanId();
+  const currentSpan = state?.spans.find((span) => span.id === spanId);
+  if (!currentSpan) {
+    return response;
+  }
+
+  currentSpan.provider = details.provider;
+  currentSpan.model = details.model;
+  currentSpan.input_tokens = details.promptTokens;
+  currentSpan.output_tokens = details.completionTokens;
+  currentSpan.metadata = {
+    ...(currentSpan.metadata ?? {}),
+    method: details.method,
+    url: details.url,
+    provider: details.provider,
+    model: details.model,
+    latency_ms: details.latencyMs,
+    input_tokens: details.promptTokens,
+    output_tokens: details.completionTokens,
+  };
+
+  return response;
+}
+
+function coerceNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringifyModel(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
