@@ -28,6 +28,7 @@ class observe_span:
             "status": "running",
             "started_at": _iso_utc_now(),
             "ended_at": None,
+            "metadata": None,
         }
         run_state.spans.append(self._span)
         self._span_token = _push_span(self._span["id"])

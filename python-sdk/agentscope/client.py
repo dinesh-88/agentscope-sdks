@@ -1,4 +1,7 @@
 import os
+import json
+import urllib.error
+import urllib.request
 from typing import Any, Dict
 
 
@@ -8,7 +11,22 @@ class AgentScopeClient:
         self.timeout = timeout
 
     def ingest(self, payload: Dict[str, Any]) -> None:
-        import requests
+        try:
+            import requests
+        except ImportError:
+            body = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(
+                f"{self.base_url}/v1/ingest",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout):
+                    return
+            except urllib.error.HTTPError as exc:
+                raise RuntimeError(f"AgentScope ingest failed with status {exc.code}") from exc
+            return
 
         response = requests.post(
             f"{self.base_url}/v1/ingest",
