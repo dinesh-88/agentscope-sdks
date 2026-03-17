@@ -29,6 +29,8 @@ export async function observeSpan<T>(
     output_tokens: options.outputTokens ?? null,
     total_tokens: options.totalTokens ?? null,
     estimated_cost: options.estimatedCost ?? null,
+    context_window: options.contextWindow ?? null,
+    context_usage_percent: options.contextUsagePercent ?? null,
     metadata: options.metadata ?? null,
   };
 

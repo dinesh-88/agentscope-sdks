@@ -14,11 +14,16 @@ export async function observeRun<T>(
   const run: RunRecord = {
     id: randomUUID(),
     project_id: options.projectId ?? DEFAULT_PROJECT_ID,
+    organization_id: null,
     workflow_name: workflowName,
     agent_name: options.agentName ?? workflowName,
     status: "running",
     started_at: isoNow(),
     ended_at: null,
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_tokens: 0,
+    total_cost_usd: 0,
   };
 
   const state: RunState = {

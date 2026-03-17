@@ -56,11 +56,16 @@ class observe_run:
         run = {
             "id": str(uuid.uuid4()),
             "project_id": self.project_id,
+            "organization_id": None,
             "workflow_name": self.workflow_name,
             "agent_name": self.agent_name,
             "status": "running",
             "started_at": _iso_utc_now(),
             "ended_at": None,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_tokens": 0,
+            "total_cost_usd": 0.0,
         }
         self._state = _RunState(run=run, exporter=self.exporter)
         self._run_token = _CURRENT_RUN.set(self._state)

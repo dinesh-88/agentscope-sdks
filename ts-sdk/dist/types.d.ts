@@ -2,11 +2,16 @@ export type ArtifactKind = "llm.prompt" | "llm.response" | "tool.input" | "tool.
 export interface RunRecord {
     id: string;
     project_id: string;
+    organization_id?: string | null;
     workflow_name: string;
     agent_name: string;
     status: "running" | "success" | "failed";
     started_at: string;
     ended_at: string | null;
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+    total_tokens?: number;
+    total_cost_usd?: number;
 }
 export interface SpanRecord {
     id: string;
@@ -23,6 +28,8 @@ export interface SpanRecord {
     output_tokens?: number | null;
     total_tokens?: number | null;
     estimated_cost?: number | null;
+    context_window?: number | null;
+    context_usage_percent?: number | null;
     metadata?: Record<string, unknown> | null;
 }
 export interface ArtifactRecord {
@@ -56,6 +63,8 @@ export interface ObserveSpanOptions {
     outputTokens?: number;
     totalTokens?: number;
     estimatedCost?: number;
+    contextWindow?: number;
+    contextUsagePercent?: number;
 }
 export interface FetchInstrumentationOptions {
     spanName?: string;

@@ -28,6 +28,14 @@ class observe_span:
             "status": "running",
             "started_at": _iso_utc_now(),
             "ended_at": None,
+            "provider": None,
+            "model": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "total_tokens": None,
+            "estimated_cost": None,
+            "context_window": None,
+            "context_usage_percent": None,
             "metadata": None,
         }
         run_state.spans.append(self._span)
