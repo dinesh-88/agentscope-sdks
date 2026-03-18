@@ -92,8 +92,11 @@ class observe_run:
 
         try:
             self._state.exporter.export(self._state.run, self._state.spans, self._state.artifacts)
-        except Exception:
-            pass
+        except Exception as export_error:
+            if _is_missing_api_key_error(export_error):
+                raise RuntimeError(
+                    "AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent."
+                ) from export_error
         finally:
             if self._span_token is not None:
                 _SPAN_STACK.reset(self._span_token)
@@ -119,3 +122,8 @@ def _pop_span(token: contextvars.Token) -> None:
 def _current_parent_span_id() -> str | None:
     stack = _SPAN_STACK.get()
     return stack[-1] if stack else None
+
+
+def _is_missing_api_key_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "api key" in message and "agentscope" in message

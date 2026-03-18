@@ -51,6 +51,9 @@ async function observeRun(workflowName, fn, options = {}) {
                 await (0, exporter_1.flushPendingExports)();
             }
             catch (exportError) {
+                if (isMissingApiKeyError(exportError)) {
+                    throw new Error("AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent.");
+                }
                 if (callbackError) {
                     console.warn("AgentScope export failed after run error:", exportError);
                 }
@@ -63,4 +66,10 @@ async function observeRun(workflowName, fn, options = {}) {
 }
 function isoNow() {
     return new Date().toISOString();
+}
+function isMissingApiKeyError(error) {
+    if (!(error instanceof Error))
+        return false;
+    const message = error.message.toLowerCase();
+    return message.includes("api key") && message.includes("agentscope");
 }
