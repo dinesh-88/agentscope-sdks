@@ -1,225 +1,53 @@
 from __future__ import annotations
 
 import builtins
-import inspect
 import sys
-import time
-import uuid
-from functools import wraps
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from ..run import _current_run_state, observe_run
-from ..span import observe_span
-from .http_interceptor import instrument_requests
-from .registry import PROVIDER_REGISTRY, TargetSpec
-from .token_usage import normalize_usage
+from .anthropic import get_instrumentors as get_anthropic_instrumentors
+from .anthropic import is_available as anthropic_available
+from .base import BaseInstrumentor
+from .openai import get_instrumentors as get_openai_instrumentors
+from .openai import is_available as openai_available
 
-_ORIGINALS: dict[str, Callable[..., Any]] = {}
-_PATCHED_TARGETS: set[str] = set()
-_ACTIVE_TARGETS: list[TargetSpec] = []
-_IMPORT_HOOK_INSTALLED = False
 _ORIGINAL_IMPORT = builtins.__import__
+_IMPORT_HOOK_INSTALLED = False
+
+_PROVIDER_LOADERS: dict[str, tuple[Callable[[], bool], Callable[[], list[BaseInstrumentor]]]] = {
+    "openai": (openai_available, get_openai_instrumentors),
+    "anthropic": (anthropic_available, get_anthropic_instrumentors),
+}
+_ACTIVE_INSTRUMENTORS: dict[str, BaseInstrumentor] = {}
 
 
-def _append_artifacts(
-    *,
-    span: dict[str, Any],
-    provider: str,
-    model: Any,
-    messages: Any,
-    prompt: Any,
-    response_text: Any,
-    input_tokens: Any,
-    output_tokens: Any,
-    total_tokens: Any,
-    latency_ms: int,
-) -> None:
-    run_state = _current_run_state()
-    if run_state is None:
-        return
-
-    run_state.artifacts.append(
-        {
-            "id": str(uuid.uuid4()),
-            "run_id": span["run_id"],
-            "span_id": span["id"],
-            "kind": "llm_prompt",
-            "payload": {
-                "provider": provider,
-                "model": model,
-                "messages": messages,
-                "prompt": prompt,
-            },
-        }
-    )
-    run_state.artifacts.append(
-        {
-            "id": str(uuid.uuid4()),
-            "run_id": span["run_id"],
-            "span_id": span["id"],
-            "kind": "llm_response",
-            "payload": {
-                "provider": provider,
-                "model": model,
-                "response_text": response_text,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-                "latency_ms": latency_ms,
-            },
-        }
-    )
+def _normalize_providers(providers: list[str] | None) -> set[str]:
+    if providers is None:
+        return set(_PROVIDER_LOADERS.keys())
+    return {provider.lower() for provider in providers}
 
 
-def _run_instrumented_sync(
-    *,
-    target: TargetSpec,
-    original: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> Any:
-    req = target.request_extractor(original, args, kwargs)
-    started = time.time()
-    with observe_span("llm_call", span_type="llm_call") as span:
-        response = original(*args, **kwargs)
-        res = target.response_extractor(response)
-        latency_ms = int((time.time() - started) * 1000)
-        input_tokens, output_tokens, total_tokens = normalize_usage(
-            res.get("input_tokens"),
-            res.get("output_tokens"),
-        )
+def _register_instrumentors(providers: list[str] | None) -> None:
+    selected = _normalize_providers(providers)
+    for provider in selected:
+        loader = _PROVIDER_LOADERS.get(provider)
+        if loader is None:
+            continue
 
-        span["provider"] = target.provider
-        span["model"] = req.get("model")
-        span["input_tokens"] = input_tokens
-        span["output_tokens"] = output_tokens
-        span["total_tokens"] = total_tokens
-        span["latency_ms"] = latency_ms
+        is_installed, build_instrumentors = loader
+        if not is_installed():
+            continue
 
-        _append_artifacts(
-            span=span,
-            provider=target.provider,
-            model=req.get("model"),
-            messages=req.get("messages"),
-            prompt=req.get("prompt"),
-            response_text=res.get("response_text"),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            latency_ms=latency_ms,
-        )
-        return response
-
-
-async def _run_instrumented_async(
-    *,
-    target: TargetSpec,
-    original: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-) -> Any:
-    req = target.request_extractor(original, args, kwargs)
-    started = time.time()
-    with observe_span("llm_call", span_type="llm_call") as span:
-        response = await original(*args, **kwargs)
-        res = target.response_extractor(response)
-        latency_ms = int((time.time() - started) * 1000)
-        input_tokens, output_tokens, total_tokens = normalize_usage(
-            res.get("input_tokens"),
-            res.get("output_tokens"),
-        )
-
-        span["provider"] = target.provider
-        span["model"] = req.get("model")
-        span["input_tokens"] = input_tokens
-        span["output_tokens"] = output_tokens
-        span["total_tokens"] = total_tokens
-        span["latency_ms"] = latency_ms
-
-        _append_artifacts(
-            span=span,
-            provider=target.provider,
-            model=req.get("model"),
-            messages=req.get("messages"),
-            prompt=req.get("prompt"),
-            response_text=res.get("response_text"),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            latency_ms=latency_ms,
-        )
-        return response
-
-
-def _build_wrapper(original: Callable[..., Any], target: TargetSpec) -> Callable[..., Any]:
-    if inspect.iscoroutinefunction(original):
-
-        @wraps(original)
-        async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            if _current_run_state() is None:
-                with observe_run(f"{target.provider}_auto_instrumentation", agent_name=target.provider):
-                    return await _run_instrumented_async(
-                        target=target,
-                        original=original,
-                        args=args,
-                        kwargs=kwargs,
-                    )
-            return await _run_instrumented_async(target=target, original=original, args=args, kwargs=kwargs)
-
-        _async_wrapper.__agentscope_wrapped__ = True  # type: ignore[attr-defined]
-        return _async_wrapper
-
-    @wraps(original)
-    def _sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-        if _current_run_state() is None:
-            with observe_run(f"{target.provider}_auto_instrumentation", agent_name=target.provider):
-                return _run_instrumented_sync(target=target, original=original, args=args, kwargs=kwargs)
-        return _run_instrumented_sync(target=target, original=original, args=args, kwargs=kwargs)
-
-    _sync_wrapper.__agentscope_wrapped__ = True  # type: ignore[attr-defined]
-    return _sync_wrapper
-
-
-def _resolve_parent(module: Any, path: tuple[str, ...]) -> tuple[Any, str] | None:
-    if not path:
-        return None
-
-    parent = module
-    for part in path[:-1]:
-        parent = getattr(parent, part, None)
-        if parent is None:
-            return None
-    return parent, path[-1]
-
-
-def _patch_target(target: TargetSpec) -> None:
-    if target.key in _PATCHED_TARGETS:
-        return
-
-    module = sys.modules.get(target.module)
-    if module is None:
-        return
-
-    resolved = _resolve_parent(module, target.path)
-    if resolved is None:
-        return
-    parent, attr_name = resolved
-    current = getattr(parent, attr_name, None)
-    if current is None:
-        return
-    if getattr(current, "__agentscope_wrapped__", False):
-        _PATCHED_TARGETS.add(target.key)
-        return
-
-    if target.key not in _ORIGINALS:
-        _ORIGINALS[target.key] = current
-    setattr(parent, attr_name, _build_wrapper(_ORIGINALS[target.key], target))
-    _PATCHED_TARGETS.add(target.key)
+        for instrumentor in build_instrumentors():
+            _ACTIVE_INSTRUMENTORS.setdefault(instrumentor.target.key, instrumentor)
 
 
 def _try_patch_available_targets() -> None:
-    for target in _ACTIVE_TARGETS:
-        _patch_target(target)
+    for instrumentor in _ACTIVE_INSTRUMENTORS.values():
+        module = sys.modules.get(instrumentor.target.module)
+        if module is None:
+            continue
+        instrumentor.patch(module)
 
 
 def _install_import_hook() -> None:
@@ -242,22 +70,11 @@ def _install_import_hook() -> None:
     _IMPORT_HOOK_INSTALLED = True
 
 
-def _resolve_enabled_targets(providers: list[str] | None) -> list[TargetSpec]:
-    if providers is None:
-        enabled = {adapter.name for adapter in PROVIDER_REGISTRY}
-    else:
-        enabled = {name.lower() for name in providers}
-
-    targets: list[TargetSpec] = []
-    for adapter in PROVIDER_REGISTRY:
-        if adapter.name in enabled:
-            targets.extend(adapter.targets)
-    return targets
+def auto_trace(providers: list[str] | None = None) -> None:
+    _register_instrumentors(providers)
+    _install_import_hook()
+    _try_patch_available_targets()
 
 
 def auto_instrument(providers: list[str] | None = None) -> None:
-    global _ACTIVE_TARGETS
-    _ACTIVE_TARGETS = _resolve_enabled_targets(providers)
-    instrument_requests()
-    _install_import_hook()
-    _try_patch_available_targets()
+    auto_trace(providers=providers)
