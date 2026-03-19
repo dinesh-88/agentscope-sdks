@@ -11,6 +11,9 @@ async function observeRun(workflowName, fn, options = {}) {
         id: (0, node_crypto_1.randomUUID)(),
         project_id: options.projectId ?? DEFAULT_PROJECT_ID,
         organization_id: null,
+        user_id: options.userId ?? null,
+        session_id: options.sessionId ?? null,
+        environment: options.environment ?? null,
         workflow_name: workflowName,
         agent_name: options.agentName ?? workflowName,
         status: "running",
@@ -20,6 +23,15 @@ async function observeRun(workflowName, fn, options = {}) {
         total_output_tokens: 0,
         total_tokens: 0,
         total_cost_usd: 0,
+        success: null,
+        error_count: 0,
+        avg_latency_ms: null,
+        p95_latency_ms: null,
+        success_rate: null,
+        tags: options.tags ?? null,
+        experiment_id: options.experimentId ?? null,
+        variant: options.variant ?? null,
+        metadata: options.metadata ?? null,
     };
     const state = {
         run,
@@ -33,10 +45,12 @@ async function observeRun(workflowName, fn, options = {}) {
         try {
             const result = await fn();
             run.status = "success";
+            run.success = true;
             return result;
         }
         catch (error) {
             run.status = "failed";
+            run.success = false;
             callbackError = error;
             throw error;
         }
@@ -51,9 +65,6 @@ async function observeRun(workflowName, fn, options = {}) {
                 await (0, exporter_1.flushPendingExports)();
             }
             catch (exportError) {
-                if (isMissingApiKeyError(exportError)) {
-                    throw new Error("AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent.");
-                }
                 if (callbackError) {
                     console.warn("AgentScope export failed after run error:", exportError);
                 }
@@ -66,10 +77,4 @@ async function observeRun(workflowName, fn, options = {}) {
 }
 function isoNow() {
     return new Date().toISOString();
-}
-function isMissingApiKeyError(error) {
-    if (!(error instanceof Error))
-        return false;
-    const message = error.message.toLowerCase();
-    return message.includes("api key") && message.includes("agentscope");
 }

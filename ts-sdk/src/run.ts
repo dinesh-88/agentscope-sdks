@@ -15,6 +15,9 @@ export async function observeRun<T>(
     id: randomUUID(),
     project_id: options.projectId ?? DEFAULT_PROJECT_ID,
     organization_id: null,
+    user_id: options.userId ?? null,
+    session_id: options.sessionId ?? null,
+    environment: options.environment ?? null,
     workflow_name: workflowName,
     agent_name: options.agentName ?? workflowName,
     status: "running",
@@ -24,6 +27,15 @@ export async function observeRun<T>(
     total_output_tokens: 0,
     total_tokens: 0,
     total_cost_usd: 0,
+    success: null,
+    error_count: 0,
+    avg_latency_ms: null,
+    p95_latency_ms: null,
+    success_rate: null,
+    tags: options.tags ?? null,
+    experiment_id: options.experimentId ?? null,
+    variant: options.variant ?? null,
+    metadata: options.metadata ?? null,
   };
 
   const state: RunState = {
@@ -40,9 +52,11 @@ export async function observeRun<T>(
     try {
       const result = await fn();
       run.status = "success";
+      run.success = true;
       return result;
     } catch (error) {
       run.status = "failed";
+      run.success = false;
       callbackError = error;
       throw error;
     } finally {
@@ -55,9 +69,6 @@ export async function observeRun<T>(
         });
         await flushPendingExports();
       } catch (exportError) {
-        if (isMissingApiKeyError(exportError)) {
-          throw new Error("AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent.");
-        }
         if (callbackError) {
           console.warn("AgentScope export failed after run error:", exportError);
         } else {
@@ -70,10 +81,4 @@ export async function observeRun<T>(
 
 export function isoNow(): string {
   return new Date().toISOString();
-}
-
-function isMissingApiKeyError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
-  return message.includes("api key") && message.includes("agentscope");
 }

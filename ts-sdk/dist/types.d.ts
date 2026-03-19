@@ -3,6 +3,9 @@ export interface RunRecord {
     id: string;
     project_id: string;
     organization_id?: string | null;
+    user_id?: string | null;
+    session_id?: string | null;
+    environment?: "prod" | "staging" | "dev" | null;
     workflow_name: string;
     agent_name: string;
     status: "running" | "success" | "failed";
@@ -12,6 +15,27 @@ export interface RunRecord {
     total_output_tokens?: number;
     total_tokens?: number;
     total_cost_usd?: number;
+    success?: boolean | null;
+    error_count?: number | null;
+    avg_latency_ms?: number | null;
+    p95_latency_ms?: number | null;
+    success_rate?: number | null;
+    tags?: string[] | null;
+    experiment_id?: string | null;
+    variant?: string | null;
+    metadata?: Record<string, unknown> | null;
+}
+export interface SpanErrorRecord {
+    error_type?: "invalid_json" | "rate_limit" | "timeout" | "tool_error" | "unknown";
+    error_source?: "provider" | "tool" | "system";
+    retryable?: boolean;
+    metadata?: Record<string, unknown> | null;
+}
+export interface SpanEvaluationRecord {
+    success?: boolean;
+    score?: number;
+    reason?: string;
+    evaluator?: "rule" | "llm" | "user";
 }
 export interface SpanRecord {
     id: string;
@@ -30,7 +54,25 @@ export interface SpanRecord {
     estimated_cost?: number | null;
     context_window?: number | null;
     context_usage_percent?: number | null;
+    latency_ms?: number | null;
+    success?: boolean | null;
+    error_type?: "invalid_json" | "rate_limit" | "timeout" | "tool_error" | "unknown" | null;
+    error_source?: "provider" | "tool" | "system" | null;
+    retryable?: boolean | null;
+    prompt_hash?: string | null;
+    prompt_template_id?: string | null;
+    temperature?: number | null;
+    top_p?: number | null;
+    max_tokens?: number | null;
+    retry_attempt?: number | null;
+    max_attempts?: number | null;
+    tool_name?: string | null;
+    tool_version?: string | null;
+    tool_latency_ms?: number | null;
+    tool_success?: boolean | null;
+    evaluation?: SpanEvaluationRecord | null;
     metadata?: Record<string, unknown> | null;
+    error?: SpanErrorRecord | null;
 }
 export interface ArtifactRecord {
     id: string;
@@ -52,11 +94,22 @@ export interface AgentScopeClientOptions {
 export interface ObserveRunOptions {
     agentName?: string;
     projectId?: string;
+    userId?: string;
+    sessionId?: string;
+    environment?: "prod" | "staging" | "dev";
+    tags?: string[];
+    experimentId?: string;
+    variant?: string;
+    metadata?: Record<string, unknown>;
     exporter?: TelemetryExporterLike;
 }
 export interface ObserveSpanOptions {
     spanType?: string;
     metadata?: Record<string, unknown>;
+    error?: SpanErrorRecord;
+    evaluation?: SpanEvaluationRecord;
+    prompt?: string;
+    promptTemplateId?: string;
     provider?: string;
     model?: string;
     inputTokens?: number;
@@ -65,6 +118,16 @@ export interface ObserveSpanOptions {
     estimatedCost?: number;
     contextWindow?: number;
     contextUsagePercent?: number;
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    retryAttempt?: number;
+    maxAttempts?: number;
+    toolName?: string;
+    toolVersion?: string;
+    toolLatencyMs?: number;
+    toolSuccess?: boolean;
+    responseText?: string;
 }
 export interface FetchInstrumentationOptions {
     spanName?: string;

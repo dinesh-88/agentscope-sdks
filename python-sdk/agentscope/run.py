@@ -43,11 +43,25 @@ class observe_run:
         *,
         agent_name: str | None = None,
         project_id: str | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        environment: str | None = None,
+        tags: list[str] | None = None,
+        experiment_id: str | None = None,
+        variant: str | None = None,
+        metadata: Dict[str, Any] | None = None,
         exporter: TelemetryExporter | None = None,
     ) -> None:
         self.workflow_name = workflow_name
         self.agent_name = agent_name or workflow_name
         self.project_id = project_id or DEFAULT_PROJECT_ID
+        self.user_id = user_id
+        self.session_id = session_id
+        self.environment = environment
+        self.tags = tags
+        self.experiment_id = experiment_id
+        self.variant = variant
+        self.metadata = metadata
         self.exporter = exporter or TelemetryExporter()
         self._run_token: contextvars.Token | None = None
         self._span_token: contextvars.Token | None = None
@@ -58,6 +72,9 @@ class observe_run:
             "id": str(uuid.uuid4()),
             "project_id": self.project_id,
             "organization_id": None,
+            "user_id": self.user_id,
+            "session_id": self.session_id,
+            "environment": self.environment,
             "workflow_name": self.workflow_name,
             "agent_name": self.agent_name,
             "status": "running",
@@ -67,6 +84,15 @@ class observe_run:
             "total_output_tokens": 0,
             "total_tokens": 0,
             "total_cost_usd": 0.0,
+            "success": None,
+            "error_count": 0,
+            "avg_latency_ms": None,
+            "p95_latency_ms": None,
+            "success_rate": None,
+            "tags": self.tags,
+            "experiment_id": self.experiment_id,
+            "variant": self.variant,
+            "metadata": self.metadata,
         }
         self._state = _RunState(run=run, exporter=self.exporter)
         self._run_token = _CURRENT_RUN.set(self._state)
@@ -79,6 +105,7 @@ class observe_run:
 
         self._state.run["ended_at"] = _iso_utc_now()
         self._state.run["status"] = "failed" if exc is not None else "success"
+        self._state.run["success"] = exc is None
 
         if exc is not None:
             self._state.artifacts.append(
@@ -94,10 +121,6 @@ class observe_run:
         try:
             self._state.exporter.export(self._state.run, self._state.spans, self._state.artifacts)
         except Exception as export_error:
-            if _is_missing_api_key_error(export_error):
-                raise RuntimeError(
-                    "AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent."
-                ) from export_error
             warnings.warn(
                 f"AgentScope export failed: {export_error}",
                 RuntimeWarning,
@@ -129,7 +152,3 @@ def _current_parent_span_id() -> str | None:
     stack = _SPAN_STACK.get()
     return stack[-1] if stack else None
 
-
-def _is_missing_api_key_error(error: Exception) -> bool:
-    message = str(error).lower()
-    return "api key" in message and "agentscope" in message
