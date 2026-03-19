@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextvars
 import time
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
@@ -97,6 +98,11 @@ class observe_run:
                 raise RuntimeError(
                     "AgentScope ingest API key is missing. Set AGENTSCOPE_API_KEY before running this agent."
                 ) from export_error
+            warnings.warn(
+                f"AgentScope export failed: {export_error}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         finally:
             if self._span_token is not None:
                 _SPAN_STACK.reset(self._span_token)

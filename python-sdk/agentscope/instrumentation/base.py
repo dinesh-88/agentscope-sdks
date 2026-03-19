@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import time
+import uuid
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable
@@ -17,6 +18,11 @@ class LLMCallRecord:
     input: Any
     output: Any
     latency_ms: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    tool_inputs: list[dict[str, Any]] | None = None
+    tool_outputs: list[dict[str, Any]] | None = None
     error: dict[str, str] | None = None
 
 
@@ -123,6 +129,7 @@ class BaseInstrumentor:
                         input=request.get("input"),
                         output=None,
                         latency_ms=latency_ms,
+                        tool_outputs=request.get("tool_outputs"),
                         error={"type": exc.__class__.__name__, "message": str(exc)},
                     ),
                 )
@@ -138,6 +145,11 @@ class BaseInstrumentor:
                     input=request.get("input"),
                     output=response_data.get("output"),
                     latency_ms=latency_ms,
+                    input_tokens=response_data.get("input_tokens"),
+                    output_tokens=response_data.get("output_tokens"),
+                    total_tokens=response_data.get("total_tokens"),
+                    tool_inputs=response_data.get("tool_inputs"),
+                    tool_outputs=response_data.get("tool_outputs") or request.get("tool_outputs"),
                 ),
             )
             return response
@@ -165,6 +177,7 @@ class BaseInstrumentor:
                         input=request.get("input"),
                         output=None,
                         latency_ms=latency_ms,
+                        tool_outputs=request.get("tool_outputs"),
                         error={"type": exc.__class__.__name__, "message": str(exc)},
                     ),
                 )
@@ -180,15 +193,24 @@ class BaseInstrumentor:
                     input=request.get("input"),
                     output=response_data.get("output"),
                     latency_ms=latency_ms,
+                    input_tokens=response_data.get("input_tokens"),
+                    output_tokens=response_data.get("output_tokens"),
+                    total_tokens=response_data.get("total_tokens"),
+                    tool_inputs=response_data.get("tool_inputs"),
+                    tool_outputs=response_data.get("tool_outputs") or request.get("tool_outputs"),
                 ),
             )
             return response
 
     @staticmethod
     def _apply_span(span: dict[str, Any], record: LLMCallRecord) -> None:
+        run_state = _current_run_state()
         span["provider"] = record.provider
         span["model"] = record.model
         span["latency_ms"] = record.latency_ms
+        span["input_tokens"] = record.input_tokens
+        span["output_tokens"] = record.output_tokens
+        span["total_tokens"] = record.total_tokens
         span["metadata"] = {
             "schema": "agentscope.llm_call.v1",
             "provider": record.provider,
@@ -196,5 +218,72 @@ class BaseInstrumentor:
             "input": record.input,
             "output": record.output,
             "latency_ms": record.latency_ms,
+            "input_tokens": record.input_tokens,
+            "output_tokens": record.output_tokens,
+            "total_tokens": record.total_tokens,
+            "tool_inputs": record.tool_inputs or [],
+            "tool_outputs": record.tool_outputs or [],
             "error": record.error,
         }
+        if run_state is None:
+            return
+
+        run_state.artifacts.append(
+            {
+                "id": str(uuid.uuid4()),
+                "run_id": span["run_id"],
+                "span_id": span["id"],
+                "kind": "llm.prompt",
+                "payload": {
+                    "provider": record.provider,
+                    "model": record.model,
+                    "input": record.input,
+                },
+            }
+        )
+        run_state.artifacts.append(
+            {
+                "id": str(uuid.uuid4()),
+                "run_id": span["run_id"],
+                "span_id": span["id"],
+                "kind": "llm.response",
+                "payload": {
+                    "provider": record.provider,
+                    "model": record.model,
+                    "output": record.output,
+                    "latency_ms": record.latency_ms,
+                    "input_tokens": record.input_tokens,
+                    "output_tokens": record.output_tokens,
+                    "total_tokens": record.total_tokens,
+                    "error": record.error,
+                },
+            }
+        )
+        for tool_input in record.tool_inputs or []:
+            run_state.artifacts.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "run_id": span["run_id"],
+                    "span_id": span["id"],
+                    "kind": "tool.input",
+                    "payload": {
+                        "provider": record.provider,
+                        "model": record.model,
+                        **tool_input,
+                    },
+                }
+            )
+        for tool_output in record.tool_outputs or []:
+            run_state.artifacts.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "run_id": span["run_id"],
+                    "span_id": span["id"],
+                    "kind": "tool.output",
+                    "payload": {
+                        "provider": record.provider,
+                        "model": record.model,
+                        **tool_output,
+                    },
+                }
+            )
