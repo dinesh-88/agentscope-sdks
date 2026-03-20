@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import os
 import time
 import uuid
 import warnings
@@ -34,6 +35,7 @@ class _RunState:
     spans: list[Dict[str, Any]] = field(default_factory=list)
     artifacts: list[Dict[str, Any]] = field(default_factory=list)
     exporter: TelemetryExporter = field(default_factory=TelemetryExporter)
+    live_stream_enabled: bool = True
 
 
 class observe_run:
@@ -51,6 +53,7 @@ class observe_run:
         variant: str | None = None,
         metadata: Dict[str, Any] | None = None,
         exporter: TelemetryExporter | None = None,
+        live_stream: bool | None = None,
     ) -> None:
         self.workflow_name = workflow_name
         self.agent_name = agent_name or workflow_name
@@ -63,6 +66,7 @@ class observe_run:
         self.variant = variant
         self.metadata = metadata
         self.exporter = exporter or TelemetryExporter()
+        self.live_stream = _env_live_stream_default() if live_stream is None else live_stream
         self._run_token: contextvars.Token | None = None
         self._span_token: contextvars.Token | None = None
         self._state: _RunState | None = None
@@ -94,9 +98,10 @@ class observe_run:
             "variant": self.variant,
             "metadata": self.metadata,
         }
-        self._state = _RunState(run=run, exporter=self.exporter)
+        self._state = _RunState(run=run, exporter=self.exporter, live_stream_enabled=self.live_stream)
         self._run_token = _CURRENT_RUN.set(self._state)
         self._span_token = _SPAN_STACK.set(())
+        _safe_live_flush(self._state)
         return run
 
     def __exit__(self, exc_type, exc, tb) -> bool:
@@ -152,3 +157,52 @@ def _current_parent_span_id() -> str | None:
     stack = _SPAN_STACK.get()
     return stack[-1] if stack else None
 
+
+def _env_live_stream_default() -> bool:
+    raw = os.getenv("AGENTSCOPE_LIVE_STREAM", "true").strip().lower()
+    return raw not in {"0", "false", "off", "no"}
+
+
+def _safe_live_flush(state: _RunState | None) -> None:
+    if state is None or not state.live_stream_enabled:
+        return
+
+    try:
+        state.exporter.export(state.run, state.spans, state.artifacts)
+    except Exception as export_error:
+        warnings.warn(
+            f"AgentScope live export failed: {export_error}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
+def _append_artifact(kind: str, payload: Dict[str, Any], *, span_id: str | None = None) -> Dict[str, Any]:
+    state = _current_run_state()
+    if state is None:
+        raise RuntimeError("trace APIs must be used inside observe_run")
+
+    artifact = {
+        "id": str(uuid.uuid4()),
+        "run_id": state.run["id"],
+        "span_id": span_id,
+        "kind": kind,
+        "payload": payload,
+    }
+    state.artifacts.append(artifact)
+    _safe_live_flush(state)
+    return artifact
+
+
+def _update_span(span_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    state = _current_run_state()
+    if state is None:
+        raise RuntimeError("trace APIs must be used inside observe_run")
+
+    span = next((entry for entry in state.spans if entry["id"] == span_id), None)
+    if span is None:
+        raise ValueError(f"span {span_id} not found in current run")
+
+    span.update(data)
+    _safe_live_flush(state)
+    return span

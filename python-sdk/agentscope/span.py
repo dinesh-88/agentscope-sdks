@@ -7,7 +7,14 @@ import time
 import uuid
 from typing import Any, Dict
 
-from .run import _current_parent_span_id, _current_run_state, _iso_utc_now, _pop_span, _push_span
+from .run import (
+    _current_parent_span_id,
+    _current_run_state,
+    _iso_utc_now,
+    _pop_span,
+    _push_span,
+    _safe_live_flush,
+)
 
 
 class observe_span:
@@ -114,6 +121,7 @@ class observe_span:
         }
         run_state.spans.append(self._span)
         self._span_token = _push_span(self._span["id"])
+        _safe_live_flush(run_state)
         return self._span
 
     def __exit__(self, exc_type, exc, tb) -> bool:
@@ -142,6 +150,7 @@ class observe_span:
 
         if self._span_token is not None:
             _pop_span(self._span_token)
+        _safe_live_flush(run_state)
         return False
 
 
