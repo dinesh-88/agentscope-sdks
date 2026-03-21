@@ -8,6 +8,7 @@ export interface RunState {
   artifacts: ArtifactRecord[];
   exporter: TelemetryExporterLike;
   spanStack: string[];
+  liveStreamEnabled: boolean;
 }
 
 const contextStorage = new AsyncLocalStorage<RunState>();

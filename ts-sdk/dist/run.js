@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.observeRun = observeRun;
 exports.isoNow = isoNow;
+exports.scheduleLiveFlush = scheduleLiveFlush;
 const node_crypto_1 = require("node:crypto");
 const context_1 = require("./context");
 const exporter_1 = require("./exporter");
@@ -39,9 +40,11 @@ async function observeRun(workflowName, fn, options = {}) {
         artifacts: [],
         exporter: options.exporter ?? new exporter_1.TelemetryExporter(),
         spanStack: [],
+        liveStreamEnabled: options.liveStream ?? envLiveStreamDefault(),
     };
     return (0, context_1.withRunState)(state, async () => {
         let callbackError;
+        scheduleLiveFlush(state);
         try {
             const result = await fn();
             run.status = "success";
@@ -52,6 +55,13 @@ async function observeRun(workflowName, fn, options = {}) {
             run.status = "failed";
             run.success = false;
             callbackError = error;
+            state.artifacts.push({
+                id: (0, node_crypto_1.randomUUID)(),
+                run_id: run.id,
+                span_id: null,
+                kind: "error",
+                payload: errorPayload(error),
+            });
             throw error;
         }
         finally {
@@ -77,4 +87,35 @@ async function observeRun(workflowName, fn, options = {}) {
 }
 function isoNow() {
     return new Date().toISOString();
+}
+function scheduleLiveFlush(state = (0, context_1.getRunState)()) {
+    if (!state || !state.liveStreamEnabled) {
+        return;
+    }
+    void state
+        .exporter
+        .export({
+        run: state.run,
+        spans: state.spans,
+        artifacts: state.artifacts,
+    })
+        .catch((error) => {
+        console.warn("AgentScope live export failed:", error);
+    });
+}
+function envLiveStreamDefault() {
+    const raw = (process.env.AGENTSCOPE_LIVE_STREAM ?? "true").trim().toLowerCase();
+    return !["0", "false", "off", "no"].includes(raw);
+}
+function errorPayload(error) {
+    if (error instanceof Error) {
+        return {
+            error_type: error.name || "Error",
+            message: error.message,
+        };
+    }
+    return {
+        error_type: "Error",
+        message: String(error),
+    };
 }

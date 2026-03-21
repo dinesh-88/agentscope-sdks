@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { withRunState, type RunState } from "./context";
+import { getRunState, withRunState, type RunState } from "./context";
 import { TelemetryExporter, flushPendingExports } from "./exporter";
 import type { ObserveRunOptions, RunRecord } from "./types";
 
@@ -44,10 +44,12 @@ export async function observeRun<T>(
     artifacts: [],
     exporter: options.exporter ?? new TelemetryExporter(),
     spanStack: [],
+    liveStreamEnabled: options.liveStream ?? envLiveStreamDefault(),
   };
 
   return withRunState(state, async () => {
     let callbackError: unknown;
+    scheduleLiveFlush(state);
 
     try {
       const result = await fn();
@@ -58,6 +60,13 @@ export async function observeRun<T>(
       run.status = "failed";
       run.success = false;
       callbackError = error;
+      state.artifacts.push({
+        id: randomUUID(),
+        run_id: run.id,
+        span_id: null,
+        kind: "error",
+        payload: errorPayload(error),
+      });
       throw error;
     } finally {
       run.ended_at = isoNow();
@@ -81,4 +90,39 @@ export async function observeRun<T>(
 
 export function isoNow(): string {
   return new Date().toISOString();
+}
+
+export function scheduleLiveFlush(state: RunState | undefined = getRunState()): void {
+  if (!state || !state.liveStreamEnabled) {
+    return;
+  }
+
+  void state
+    .exporter
+    .export({
+      run: state.run,
+      spans: state.spans,
+      artifacts: state.artifacts,
+    })
+    .catch((error) => {
+      console.warn("AgentScope live export failed:", error);
+    });
+}
+
+function envLiveStreamDefault(): boolean {
+  const raw = (process.env.AGENTSCOPE_LIVE_STREAM ?? "true").trim().toLowerCase();
+  return !["0", "false", "off", "no"].includes(raw);
+}
+
+function errorPayload(error: unknown): Record<string, string> {
+  if (error instanceof Error) {
+    return {
+      error_type: error.name || "Error",
+      message: error.message,
+    };
+  }
+  return {
+    error_type: "Error",
+    message: String(error),
+  };
 }

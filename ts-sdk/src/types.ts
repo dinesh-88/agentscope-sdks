@@ -4,6 +4,9 @@ export type ArtifactKind =
   | "tool.input"
   | "tool.output"
   | "file.diff"
+  | "file.content"
+  | "log"
+  | "error"
   | "command.stdout"
   | "command.stderr";
 
@@ -117,6 +120,7 @@ export interface ObserveRunOptions {
   variant?: string;
   metadata?: Record<string, unknown>;
   exporter?: TelemetryExporterLike;
+  liveStream?: boolean;
 }
 
 export interface ObserveSpanOptions {
@@ -150,6 +154,21 @@ export interface FetchInstrumentationOptions {
   spanName?: string;
   ignoreUrls?: Array<string | RegExp>;
   captureBodies?: boolean;
+  providers?: string[];
+}
+
+export interface TraceLogOptions {
+  level?: string;
+  spanId?: string | null;
+  metadata?: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export interface CommandResult {
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
 }
 
 export interface TelemetryExporterLike {

@@ -2,9 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.observeSpan = observeSpan;
 exports.addArtifact = addArtifact;
+exports.updateSpan = updateSpan;
 const node_crypto_1 = require("node:crypto");
 const context_1 = require("./context");
 const run_1 = require("./run");
+const run_2 = require("./run");
 async function observeSpan(name, fn, options = {}) {
     const state = (0, context_1.getRunState)();
     if (!state) {
@@ -17,7 +19,7 @@ async function observeSpan(name, fn, options = {}) {
         span_type: options.spanType ?? name,
         name,
         status: "running",
-        started_at: (0, run_1.isoNow)(),
+        started_at: (0, run_2.isoNow)(),
         ended_at: null,
         provider: options.provider ?? null,
         model: options.model ?? null,
@@ -48,6 +50,7 @@ async function observeSpan(name, fn, options = {}) {
         error: options.error ?? null,
     };
     state.spans.push(span);
+    (0, run_1.scheduleLiveFlush)(state);
     return (0, context_1.withSpanContext)(span.id, async () => {
         try {
             const result = await fn();
@@ -64,15 +67,26 @@ async function observeSpan(name, fn, options = {}) {
                 ...(span.metadata ?? {}),
                 error: errorToMetadata(error),
             };
+            state.artifacts.push({
+                id: (0, node_crypto_1.randomUUID)(),
+                run_id: state.run.id,
+                span_id: span.id,
+                kind: "error",
+                payload: {
+                    error_type: error instanceof Error ? error.name : "Error",
+                    message: error instanceof Error ? error.message : String(error),
+                },
+            });
             throw error;
         }
         finally {
-            span.ended_at = (0, run_1.isoNow)();
+            span.ended_at = (0, run_2.isoNow)();
             span.latency_ms = elapsedMs(span.started_at, span.ended_at);
+            (0, run_1.scheduleLiveFlush)(state);
         }
     });
 }
-function addArtifact(kind, payload) {
+function addArtifact(kind, payload, spanId) {
     const state = (0, context_1.getRunState)();
     if (!state) {
         throw new Error("addArtifact must be called inside observeRun");
@@ -80,12 +94,26 @@ function addArtifact(kind, payload) {
     const artifact = {
         id: (0, node_crypto_1.randomUUID)(),
         run_id: state.run.id,
-        span_id: (0, context_1.currentSpanId)(),
+        span_id: spanId === undefined ? (0, context_1.currentSpanId)() : spanId,
         kind,
         payload,
     };
     state.artifacts.push(artifact);
+    (0, run_1.scheduleLiveFlush)(state);
     return artifact;
+}
+function updateSpan(spanId, data) {
+    const state = (0, context_1.getRunState)();
+    if (!state) {
+        throw new Error("trace APIs must be used inside observeRun");
+    }
+    const span = state.spans.find((item) => item.id === spanId);
+    if (!span) {
+        throw new Error(`span ${spanId} not found in current run`);
+    }
+    Object.assign(span, data);
+    (0, run_1.scheduleLiveFlush)(state);
+    return span;
 }
 function errorToMetadata(error) {
     if (error instanceof Error) {

@@ -12,7 +12,9 @@ npm run build
 ## Usage
 
 ```ts
-import { addArtifact, observeRun, observeSpan } from "@agentscope/sdk";
+import { addArtifact, autoInstrument, observeRun, observeSpan, trace } from "@agentscope/sdk";
+
+autoInstrument(["openai", "anthropic"]);
 
 await observeRun("coding_agent", async () => {
   await observeSpan("file_read", async () => {
@@ -25,10 +27,12 @@ await observeRun("coding_agent", async () => {
       messages: [{ role: "user", content: "hello" }],
     });
   });
+
+  trace.log("run step finished", { level: "info" });
 });
 ```
 
-Set `AGENTSCOPE_API=http://localhost:8080` if the API is not running on the default host.
+Set `AGENTSCOPE_API_BASE=http://localhost:8080` if the API is not running on the default host.
 
 ## Example Script
 
@@ -43,7 +47,17 @@ This runs [examples/basic.js](/Users/dineshpriyashantha/Documents/agentscope/pac
 
 - `observeRun(workflowName, fn, options?)`
 - `observeSpan(name, fn, options?)`
-- `addArtifact(kind, payload)`
+- `addArtifact(kind, payload, spanId?)`
+- `trace.auto(providers?)`
+- `trace.log(message, options?)`
+- `trace.updateSpan(spanId, data)`
+- `autoTrace(providers?)`
+- `autoInstrument(providers?)`
+- `codingAgentRun(fn, options?)`
+- `instrumentCodingAgent(fn)`
+- `readFile(filePath, encoding?)`
+- `writeFile(filePath, content, encoding?)`
+- `runCommand(command, options?)`
 - `flush()`
 
 ## Fetch Instrumentation

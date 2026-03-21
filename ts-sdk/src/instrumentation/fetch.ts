@@ -35,6 +35,7 @@ export function instrumentFetch(options: FetchInstrumentationOptions = {}): () =
   originalFetch = globalThis.fetch.bind(globalThis);
   const captureBodies = options.captureBodies ?? true;
   const ignoreUrls = options.ignoreUrls ?? [];
+  const providerFilter = normalizeProviders(options.providers);
 
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const requestDetails = await readRequestDetails(input, init);
@@ -46,6 +47,9 @@ export function instrumentFetch(options: FetchInstrumentationOptions = {}): () =
     }
 
     const provider = detectProvider(requestDetails.url);
+    if (provider && providerFilter && !providerFilter.has(provider)) {
+      return originalFetch!(input, init);
+    }
     const llmRequest = provider ? detectLlmRequest(requestDetails) : null;
     const requestModel = stringifyModel(llmRequest?.model);
     const startTime = Date.now();
@@ -122,7 +126,11 @@ function shouldIgnoreUrl(url: string, patterns: Array<string | RegExp>): boolean
 }
 
 function isAgentScopeIngestUrl(url: string): boolean {
-  const baseUrl = (process.env.AGENTSCOPE_API ?? "http://localhost:8080").replace(/\/$/, "");
+  const baseUrl = (
+    process.env.AGENTSCOPE_API_BASE
+    ?? process.env.AGENTSCOPE_API
+    ?? "http://localhost:8080"
+  ).replace(/\/$/, "");
   return url.startsWith(`${baseUrl}/v1/ingest`);
 }
 
@@ -162,6 +170,13 @@ function detectProvider(url: string): string | null {
   }
 
   return null;
+}
+
+function normalizeProviders(providers: string[] | undefined): Set<string> | null {
+  if (!providers || providers.length === 0) {
+    return null;
+  }
+  return new Set(providers.map((provider) => provider.toLowerCase()));
 }
 
 async function readRequestDetails(

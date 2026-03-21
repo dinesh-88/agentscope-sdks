@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { currentSpanId, getRunState, withSpanContext } from "./context";
+import { scheduleLiveFlush } from "./run";
 import { isoNow } from "./run";
 import type { ArtifactKind, ArtifactRecord, ObserveSpanOptions, SpanRecord } from "./types";
 
@@ -53,6 +54,7 @@ export async function observeSpan<T>(
   };
 
   state.spans.push(span);
+  scheduleLiveFlush(state);
 
   return withSpanContext(span.id, async () => {
     try {
@@ -69,15 +71,26 @@ export async function observeSpan<T>(
         ...(span.metadata ?? {}),
         error: errorToMetadata(error),
       };
+      state.artifacts.push({
+        id: randomUUID(),
+        run_id: state.run.id,
+        span_id: span.id,
+        kind: "error",
+        payload: {
+          error_type: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
       throw error;
     } finally {
       span.ended_at = isoNow();
       span.latency_ms = elapsedMs(span.started_at, span.ended_at);
+      scheduleLiveFlush(state);
     }
   });
 }
 
-export function addArtifact(kind: ArtifactKind, payload: unknown): ArtifactRecord {
+export function addArtifact(kind: ArtifactKind, payload: unknown, spanId?: string | null): ArtifactRecord {
   const state = getRunState();
   if (!state) {
     throw new Error("addArtifact must be called inside observeRun");
@@ -86,13 +99,30 @@ export function addArtifact(kind: ArtifactKind, payload: unknown): ArtifactRecor
   const artifact: ArtifactRecord = {
     id: randomUUID(),
     run_id: state.run.id,
-    span_id: currentSpanId(),
+    span_id: spanId === undefined ? currentSpanId() : spanId,
     kind,
     payload,
   };
 
   state.artifacts.push(artifact);
+  scheduleLiveFlush(state);
   return artifact;
+}
+
+export function updateSpan(spanId: string, data: Partial<SpanRecord>): SpanRecord {
+  const state = getRunState();
+  if (!state) {
+    throw new Error("trace APIs must be used inside observeRun");
+  }
+
+  const span = state.spans.find((item) => item.id === spanId);
+  if (!span) {
+    throw new Error(`span ${spanId} not found in current run`);
+  }
+
+  Object.assign(span, data);
+  scheduleLiveFlush(state);
+  return span;
 }
 
 function errorToMetadata(error: unknown): Record<string, unknown> {

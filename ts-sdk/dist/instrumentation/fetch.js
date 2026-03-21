@@ -14,6 +14,7 @@ function instrumentFetch(options = {}) {
     originalFetch = globalThis.fetch.bind(globalThis);
     const captureBodies = options.captureBodies ?? true;
     const ignoreUrls = options.ignoreUrls ?? [];
+    const providerFilter = normalizeProviders(options.providers);
     globalThis.fetch = async (input, init) => {
         const requestDetails = await readRequestDetails(input, init);
         if (shouldIgnoreUrl(requestDetails.url, ignoreUrls) || isAgentScopeIngestUrl(requestDetails.url)) {
@@ -23,6 +24,9 @@ function instrumentFetch(options = {}) {
             return originalFetch(input, init);
         }
         const provider = detectProvider(requestDetails.url);
+        if (provider && providerFilter && !providerFilter.has(provider)) {
+            return originalFetch(input, init);
+        }
         const llmRequest = provider ? detectLlmRequest(requestDetails) : null;
         const requestModel = stringifyModel(llmRequest?.model);
         const startTime = Date.now();
@@ -88,7 +92,9 @@ function shouldIgnoreUrl(url, patterns) {
     });
 }
 function isAgentScopeIngestUrl(url) {
-    const baseUrl = (process.env.AGENTSCOPE_API ?? "http://localhost:8080").replace(/\/$/, "");
+    const baseUrl = (process.env.AGENTSCOPE_API_BASE
+        ?? process.env.AGENTSCOPE_API
+        ?? "http://localhost:8080").replace(/\/$/, "");
     return url.startsWith(`${baseUrl}/v1/ingest`);
 }
 function inferSpanName(url) {
@@ -125,6 +131,12 @@ function detectProvider(url) {
         return null;
     }
     return null;
+}
+function normalizeProviders(providers) {
+    if (!providers || providers.length === 0) {
+        return null;
+    }
+    return new Set(providers.map((provider) => provider.toLowerCase()));
 }
 async function readRequestDetails(input, init) {
     if (input instanceof Request) {

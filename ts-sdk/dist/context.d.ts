@@ -5,6 +5,7 @@ export interface RunState {
     artifacts: ArtifactRecord[];
     exporter: TelemetryExporterLike;
     spanStack: string[];
+    liveStreamEnabled: boolean;
 }
 export declare function getRunState(): RunState | undefined;
 export declare function withRunState<T>(state: RunState, fn: () => Promise<T>): Promise<T>;

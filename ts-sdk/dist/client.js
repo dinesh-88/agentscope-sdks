@@ -6,7 +6,10 @@ class AgentScopeClient {
     apiKey;
     timeoutMs;
     constructor(options = {}) {
-        this.baseUrl = (options.baseUrl ?? process.env.AGENTSCOPE_API ?? "http://localhost:8080").replace(/\/$/, "");
+        this.baseUrl = (options.baseUrl
+            ?? process.env.AGENTSCOPE_API_BASE
+            ?? process.env.AGENTSCOPE_API
+            ?? "http://localhost:8080").replace(/\/$/, "");
         this.apiKey = options.apiKey ?? process.env.AGENTSCOPE_API_KEY ?? "";
         this.timeoutMs = options.timeoutMs ?? 5000;
     }
