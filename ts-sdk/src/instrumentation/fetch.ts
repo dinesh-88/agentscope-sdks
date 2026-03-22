@@ -18,6 +18,8 @@ type ResponsePayload = {
   usage?: {
     prompt_tokens?: unknown;
     completion_tokens?: unknown;
+    input_tokens?: unknown;
+    output_tokens?: unknown;
   };
 };
 
@@ -70,8 +72,8 @@ export function instrumentFetch(options: FetchInstrumentationOptions = {}): () =
         }
 
         const usage = responsePayload?.usage;
-        const promptTokens = coerceNumber(usage?.prompt_tokens);
-        const completionTokens = coerceNumber(usage?.completion_tokens);
+        const promptTokens = coerceNumber(usage?.prompt_tokens) ?? coerceNumber(usage?.input_tokens);
+        const completionTokens = coerceNumber(usage?.completion_tokens) ?? coerceNumber(usage?.output_tokens);
 
         return finalizeResponse(response, {
           provider,
@@ -257,8 +259,8 @@ function extractLlmResponse(payload: ResponsePayload | null): Record<string, unk
 
   return {
     content: payload.choices?.[0]?.message?.content ?? null,
-    prompt_tokens: payload.usage?.prompt_tokens ?? null,
-    completion_tokens: payload.usage?.completion_tokens ?? null,
+    prompt_tokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? null,
+    completion_tokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? null,
   };
 }
 

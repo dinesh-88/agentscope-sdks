@@ -4,6 +4,7 @@ import inspect
 from typing import Any, Callable
 
 from .registry import ProviderAdapter, TargetSpec
+from .token_usage import coerce_int, normalize_usage
 
 
 def _safe_getattr(value: Any, name: str, default: Any = None) -> Any:
@@ -27,6 +28,12 @@ def _extract_call_data(
         return dict(kwargs)
 
 
+def _safe_get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return _safe_getattr(value, key, default)
+
+
 def _extract_text(response: Any) -> str | None:
     if isinstance(response, str):
         return response
@@ -47,6 +54,35 @@ def _extract_text(response: Any) -> str | None:
     return None
 
 
+def _extract_usage(response: Any) -> tuple[int | None, int | None, int | None]:
+    usage_metadata = _safe_get(response, "usage_metadata")
+    response_metadata = _safe_get(response, "response_metadata")
+    token_usage = _safe_get(response_metadata, "token_usage")
+
+    input_tokens = _safe_get(usage_metadata, "input_tokens")
+    if input_tokens is None:
+        input_tokens = _safe_get(token_usage, "input_tokens")
+    if input_tokens is None:
+        input_tokens = _safe_get(token_usage, "prompt_tokens")
+
+    output_tokens = _safe_get(usage_metadata, "output_tokens")
+    if output_tokens is None:
+        output_tokens = _safe_get(token_usage, "output_tokens")
+    if output_tokens is None:
+        output_tokens = _safe_get(token_usage, "completion_tokens")
+
+    total_tokens = _safe_get(usage_metadata, "total_tokens")
+    if total_tokens is None:
+        total_tokens = _safe_get(token_usage, "total_tokens")
+
+    input_tokens, output_tokens, normalized_total = normalize_usage(input_tokens, output_tokens)
+    parsed_total = coerce_int(total_tokens)
+    if parsed_total is None:
+        parsed_total = normalized_total
+
+    return input_tokens, output_tokens, parsed_total
+
+
 def _request_extractor(
     original: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
 ) -> dict[str, Any]:
@@ -62,10 +98,12 @@ def _request_extractor(
 
 
 def _response_extractor(response: Any) -> dict[str, Any]:
+    input_tokens, output_tokens, total_tokens = _extract_usage(response)
     return {
         "response_text": _extract_text(response),
-        "input_tokens": None,
-        "output_tokens": None,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
     }
 
 

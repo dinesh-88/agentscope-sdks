@@ -43,8 +43,8 @@ function instrumentFetch(options = {}) {
                     (0, span_1.addArtifact)("llm.response", llmResponse);
                 }
                 const usage = responsePayload?.usage;
-                const promptTokens = coerceNumber(usage?.prompt_tokens);
-                const completionTokens = coerceNumber(usage?.completion_tokens);
+                const promptTokens = coerceNumber(usage?.prompt_tokens) ?? coerceNumber(usage?.input_tokens);
+                const completionTokens = coerceNumber(usage?.completion_tokens) ?? coerceNumber(usage?.output_tokens);
                 return finalizeResponse(response, {
                     provider,
                     model: requestModel,
@@ -205,8 +205,8 @@ function extractLlmResponse(payload) {
     }
     return {
         content: payload.choices?.[0]?.message?.content ?? null,
-        prompt_tokens: payload.usage?.prompt_tokens ?? null,
-        completion_tokens: payload.usage?.completion_tokens ?? null,
+        prompt_tokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? null,
+        completion_tokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? null,
     };
 }
 function finalizeResponse(response, details) {
