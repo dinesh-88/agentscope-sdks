@@ -41,7 +41,7 @@ npm install
 npm run example
 ```
 
-This runs [examples/basic.js](/Users/dineshpriyashantha/Documents/agentscope/packages/ts-sdk/examples/basic.js), which emits a run with nested spans and artifacts to the local AgentScope API.
+This runs `examples/basic.js`, which emits a run with nested spans and artifacts to the local AgentScope API.
 
 ## API
 
