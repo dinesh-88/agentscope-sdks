@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable
 
+from ..context_manager import trace_context
 from ..run import _current_run_state, observe_run
 from ..span import observe_span
 
@@ -227,6 +228,23 @@ class BaseInstrumentor:
         }
         if run_state is None:
             return
+
+        sources = trace_context.get_all()
+        if sources:
+            run_state.artifacts.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "run_id": span["run_id"],
+                    "span_id": span["id"],
+                    "kind": "llm.context",
+                    "payload": {
+                        "data": {
+                            "sources": sources,
+                            "final_prompt": record.input,
+                        }
+                    },
+                }
+            )
 
         run_state.artifacts.append(
             {

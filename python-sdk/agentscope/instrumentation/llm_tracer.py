@@ -4,6 +4,7 @@ import time
 import uuid
 from typing import Any, Callable
 
+from ..context_manager import trace_context
 from ..run import _current_run_state
 from ..span import observe_span
 from .token_usage import normalize_usage
@@ -84,6 +85,23 @@ def _append_artifact(*, span: dict[str, Any], kind: str, payload: dict[str, Any]
     )
 
 
+def _append_context_snapshot_artifact(*, span: dict[str, Any], final_prompt: Any) -> None:
+    sources = trace_context.get_all()
+    if not sources:
+        return
+
+    _append_artifact(
+        span=span,
+        kind="llm.context",
+        payload={
+            "data": {
+                "sources": sources,
+                "final_prompt": final_prompt,
+            }
+        },
+    )
+
+
 def _extract_prompt_fields(payload: Any) -> tuple[Any, Any, Any]:
     if not isinstance(payload, dict):
         return None, None, None
@@ -121,6 +139,7 @@ def trace_http_llm_call(
                 "payload": payload,
             },
         )
+        _append_context_snapshot_artifact(span=span, final_prompt=payload)
 
         response = request_fn()
         latency_ms = int((time.perf_counter() - started) * 1000)

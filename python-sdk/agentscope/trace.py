@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .context_manager import trace_context
 from .instrumentation import auto_trace
 from .run import _append_artifact, _current_parent_span_id, _update_span
 
 
 class _TraceFacade:
+    def __init__(self) -> None:
+        self.context = trace_context
+
     def auto(self, providers: list[str] | None = None) -> None:
         auto_trace(providers=providers)
 
@@ -36,4 +40,3 @@ class _TraceFacade:
 
 
 trace = _TraceFacade()
-
