@@ -1,5 +1,6 @@
 {
   "name": "@agentscope-sdk/sdk",
+  "private": true,
   "version": "0.1.1",
   "description": "AgentScope TypeScript SDK",
   "main": "dist/index.js",
@@ -18,7 +19,7 @@
     "telemetry",
     "agent"
   ],
-  "license": "MIT",
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=18"
   },
