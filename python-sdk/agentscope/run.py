@@ -163,11 +163,67 @@ def _env_live_stream_default() -> bool:
     return raw not in {"0", "false", "off", "no"}
 
 
+def _refresh_run_aggregates(state: _RunState) -> None:
+    spans = state.spans
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    total_cost_usd = 0.0
+    error_count = 0
+    latencies: list[float] = []
+    success_count = 0
+    finished_count = 0
+
+    for span in spans:
+        input_tokens = span.get("input_tokens")
+        output_tokens = span.get("output_tokens")
+        span_total_tokens = span.get("total_tokens")
+        estimated_cost = span.get("estimated_cost")
+        latency_ms = span.get("latency_ms")
+        success = span.get("success")
+        status = str(span.get("status", "")).lower()
+
+        if isinstance(input_tokens, (int, float)):
+            total_input_tokens += max(0, int(input_tokens))
+        if isinstance(output_tokens, (int, float)):
+            total_output_tokens += max(0, int(output_tokens))
+        if isinstance(span_total_tokens, (int, float)):
+            total_tokens += max(0, int(span_total_tokens))
+        if isinstance(estimated_cost, (int, float)):
+            total_cost_usd += max(0.0, float(estimated_cost))
+        if isinstance(latency_ms, (int, float)):
+            latencies.append(max(0.0, float(latency_ms)))
+
+        is_finished = status in {"success", "completed", "failed", "error"} or success is not None
+        if is_finished:
+            finished_count += 1
+            if bool(success):
+                success_count += 1
+        if status in {"failed", "error"} or success is False:
+            error_count += 1
+
+    state.run["total_input_tokens"] = total_input_tokens
+    state.run["total_output_tokens"] = total_output_tokens
+    state.run["total_tokens"] = total_tokens or (total_input_tokens + total_output_tokens)
+    state.run["total_cost_usd"] = total_cost_usd
+    state.run["error_count"] = error_count
+
+    if latencies:
+        latencies.sort()
+        state.run["avg_latency_ms"] = sum(latencies) / len(latencies)
+        p95_index = max(0, min(len(latencies) - 1, int(len(latencies) * 0.95) - 1))
+        state.run["p95_latency_ms"] = latencies[p95_index]
+
+    if finished_count > 0:
+        state.run["success_rate"] = success_count / finished_count
+
+
 def _safe_live_flush(state: _RunState | None) -> None:
     if state is None or not state.live_stream_enabled:
         return
 
     try:
+        _refresh_run_aggregates(state)
         state.exporter.export(state.run, state.spans, state.artifacts)
     except Exception as export_error:
         warnings.warn(
