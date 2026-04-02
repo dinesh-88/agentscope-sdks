@@ -5,6 +5,7 @@ import hashlib
 import json
 import time
 import uuid
+import re
 from typing import Any, Dict
 
 from .run import (
@@ -136,7 +137,11 @@ class observe_span:
         self._span["latency_ms"] = max(0.0, elapsed)
 
         if exc is not None and run_state is not None:
-            self._span["error_type"] = self._span.get("error_type") or "unknown"
+            current_error_type = self._span.get("error_type")
+            if not current_error_type or current_error_type == "unknown":
+                self._span["error_type"] = _normalize_error_type(
+                    exc_type.__name__ if exc_type else "Exception"
+                )
             self._span["error_source"] = self._span.get("error_source") or "system"
             run_state.artifacts.append(
                 {
@@ -157,6 +162,12 @@ class observe_span:
 def _prompt_hash(prompt: str) -> str:
     normalized = " ".join(prompt.replace("\r\n", "\n").strip().split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _normalize_error_type(raw: str) -> str:
+    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", raw or "")
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "_", normalized).strip("_").lower()
+    return normalized or "unknown"
 
 
 def _evaluate_response(response_text: str | None) -> Dict[str, Any] | None:

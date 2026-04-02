@@ -61,7 +61,9 @@ async function observeSpan(name, fn, options = {}) {
         catch (error) {
             span.status = "failed";
             span.success = false;
-            span.error_type = span.error_type ?? "unknown";
+            if (!span.error_type || span.error_type === "unknown") {
+                span.error_type = inferErrorType(error);
+            }
             span.error_source = span.error_source ?? "system";
             span.metadata = {
                 ...(span.metadata ?? {}),
@@ -126,6 +128,18 @@ function errorToMetadata(error) {
     return {
         value: String(error),
     };
+}
+function inferErrorType(error) {
+    if (!(error instanceof Error)) {
+        return "unknown";
+    }
+    const raw = error.name?.trim() || "unknown";
+    const normalized = raw
+        .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    return normalized || "unknown";
 }
 function promptHash(prompt) {
     const normalized = prompt.replace(/\r\n/g, "\n").trim().replace(/[ \t]+/g, " ");

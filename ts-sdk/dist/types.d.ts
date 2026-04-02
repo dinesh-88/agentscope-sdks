@@ -26,7 +26,7 @@ export interface RunRecord {
     metadata?: Record<string, unknown> | null;
 }
 export interface SpanErrorRecord {
-    error_type?: "invalid_json" | "rate_limit" | "timeout" | "tool_error" | "unknown";
+    error_type?: string;
     error_source?: "provider" | "tool" | "system";
     retryable?: boolean;
     metadata?: Record<string, unknown> | null;
@@ -56,7 +56,7 @@ export interface SpanRecord {
     context_usage_percent?: number | null;
     latency_ms?: number | null;
     success?: boolean | null;
-    error_type?: "invalid_json" | "rate_limit" | "timeout" | "tool_error" | "unknown" | null;
+    error_type?: string | null;
     error_source?: "provider" | "tool" | "system" | null;
     retryable?: boolean | null;
     prompt_hash?: string | null;
