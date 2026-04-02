@@ -38,19 +38,29 @@ function instrumentFetch(options = {}) {
             const latencyMs = Date.now() - startTime;
             if (llmRequest) {
                 const responsePayload = await safeReadJson(response.clone());
-                const llmResponse = extractLlmResponse(responsePayload);
-                if (llmResponse && captureBodies) {
-                    (0, span_1.addArtifact)("llm.response", llmResponse);
-                }
                 const usage = responsePayload?.usage;
                 const promptTokens = coerceNumber(usage?.prompt_tokens) ?? coerceNumber(usage?.input_tokens);
                 const completionTokens = coerceNumber(usage?.completion_tokens) ?? coerceNumber(usage?.output_tokens);
+                const totalTokens = coerceNumber(usage?.total_tokens) ?? (promptTokens !== null || completionTokens !== null
+                    ? (promptTokens ?? 0) + (completionTokens ?? 0)
+                    : null);
+                const llmResponse = extractLlmResponse(responsePayload, {
+                    provider,
+                    model: requestModel,
+                    promptTokens,
+                    completionTokens,
+                    totalTokens,
+                });
+                if (llmResponse && captureBodies) {
+                    (0, span_1.addArtifact)("llm.response", llmResponse);
+                }
                 return finalizeResponse(response, {
                     provider,
                     model: requestModel,
                     latencyMs,
                     promptTokens,
                     completionTokens,
+                    totalTokens,
                     method: requestDetails.method,
                     url: requestDetails.url,
                 });
@@ -61,6 +71,7 @@ function instrumentFetch(options = {}) {
                 latencyMs,
                 promptTokens: null,
                 completionTokens: null,
+                totalTokens: null,
                 method: requestDetails.method,
                 url: requestDetails.url,
             });
@@ -199,14 +210,23 @@ async function safeReadJson(response) {
         return null;
     }
 }
-function extractLlmResponse(payload) {
+function extractLlmResponse(payload, details) {
     if (!payload) {
         return null;
     }
     return {
+        provider: details.provider,
+        model: details.model,
         content: payload.choices?.[0]?.message?.content ?? null,
-        prompt_tokens: payload.usage?.prompt_tokens ?? payload.usage?.input_tokens ?? null,
-        completion_tokens: payload.usage?.completion_tokens ?? payload.usage?.output_tokens ?? null,
+        prompt_tokens: details.promptTokens,
+        completion_tokens: details.completionTokens,
+        total_tokens: details.totalTokens,
+        usage: {
+            input_tokens: details.promptTokens,
+            output_tokens: details.completionTokens,
+            total_tokens: details.totalTokens,
+        },
+        response: payload,
     };
 }
 function finalizeResponse(response, details) {
@@ -220,6 +240,7 @@ function finalizeResponse(response, details) {
     currentSpan.model = details.model;
     currentSpan.input_tokens = details.promptTokens;
     currentSpan.output_tokens = details.completionTokens;
+    currentSpan.total_tokens = details.totalTokens;
     currentSpan.metadata = {
         ...(currentSpan.metadata ?? {}),
         method: details.method,
@@ -229,6 +250,7 @@ function finalizeResponse(response, details) {
         latency_ms: details.latencyMs,
         input_tokens: details.promptTokens,
         output_tokens: details.completionTokens,
+        total_tokens: details.totalTokens,
     };
     return response;
 }

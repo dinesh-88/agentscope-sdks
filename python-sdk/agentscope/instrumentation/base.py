@@ -273,6 +273,13 @@ class BaseInstrumentor:
                     "input_tokens": record.input_tokens,
                     "output_tokens": record.output_tokens,
                     "total_tokens": record.total_tokens,
+                    "usage": {
+                        "input_tokens": record.input_tokens,
+                        "output_tokens": record.output_tokens,
+                        "total_tokens": record.total_tokens,
+                        "prompt_tokens": record.input_tokens,
+                        "completion_tokens": record.output_tokens,
+                    },
                     "error": record.error,
                 },
             }

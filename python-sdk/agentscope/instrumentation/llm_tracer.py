@@ -173,6 +173,13 @@ def trace_http_llm_call(
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "prompt_tokens": input_tokens,
+                    "completion_tokens": output_tokens,
+                },
             },
         )
 
