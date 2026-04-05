@@ -28,7 +28,39 @@ from agentscope import auto_instrument
 auto_instrument(["openai", "anthropic"])
 ```
 
-This enables automatic tracing hooks for supported providers.
+This enables automatic provider tracing, orchestration boundary detection, and
+context propagation.
+
+Default orchestration detectors:
+- HTTP ASGI (`FastAPI`/`Starlette`) request boundary
+- `gRPC` server interceptors
+- `Celery` task execution boundary
+- `kafka-python` consumer poll boundary (best-effort)
+
+Default propagation:
+- HTTP headers via `requests`
+- Kafka message headers via `kafka-python` producer
+
+Each boundary creates/continues one root orchestration run so agent runs inside
+that boundary share one `trace_id` automatically.
+
+Disable orchestration auto-detection if needed:
+
+```python
+auto_instrument(["openai"], orchestration=False)
+```
+
+Choose specific transports:
+
+```python
+auto_instrument(["openai"], orchestration=["http", "grpc"])
+```
+
+Disable propagation injection:
+
+```python
+auto_instrument(["openai"], propagation=False)
+```
 
 ## Coding-Agent Helpers
 
@@ -50,7 +82,7 @@ with coding_agent_run(agent_name="codebot"):
 - `trace.log(message, level="info", span_id=None, metadata=None, timestamp=None)`
 - `trace.update_span(span_id, data)`
 - `auto_trace(providers=None)`
-- `auto_instrument(providers=None)`
+- `auto_instrument(providers=None, orchestration="auto", propagation=True, orchestration_workflow_name="orchestration_auto_trace", orchestration_agent_name="orchestrator")`
 - `coding_agent_run(agent_name="coding_agent")`
 - `instrument_coding_agent(fn)`
 - `read_file(path, encoding="utf-8")`

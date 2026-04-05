@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import builtins
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from .anthropic import get_instrumentors as get_anthropic_instrumentors
 from .anthropic import is_available as anthropic_available
 from .base import BaseInstrumentor
+from .http_interceptor import instrument_requests
+from .orchestration import instrument_orchestration
 from .openai import get_instrumentors as get_openai_instrumentors
 from .openai import is_available as openai_available
 
@@ -76,5 +78,22 @@ def auto_trace(providers: list[str] | None = None) -> None:
     _try_patch_available_targets()
 
 
-def auto_instrument(providers: list[str] | None = None) -> None:
+def auto_instrument(
+    providers: list[str] | None = None,
+    *,
+    orchestration: bool | str | Iterable[str] = "auto",
+    propagation: bool = True,
+    orchestration_workflow_name: str = "orchestration_auto_trace",
+    orchestration_agent_name: str = "orchestrator",
+) -> None:
     auto_trace(providers=providers)
+    if propagation:
+        instrument_requests()
+    normalized_orchestration = orchestration.lower() if isinstance(orchestration, str) else orchestration
+    if normalized_orchestration in (False, "off", "none", "disabled"):
+        return
+    instrument_orchestration(
+        workflow_name=orchestration_workflow_name,
+        agent_name=orchestration_agent_name,
+        transports=normalized_orchestration,
+    )

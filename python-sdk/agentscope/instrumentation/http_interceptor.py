@@ -4,6 +4,7 @@ from typing import Any
 
 from ..run import _current_run_state, observe_run
 from .llm_tracer import trace_http_llm_call
+from .propagation import inject_into_mapping
 from .provider_detection import detect_provider
 
 _REQUESTS_PATCHED = False
@@ -30,6 +31,10 @@ def instrument_requests() -> None:
     _ORIGINAL_REQUEST = current
 
     def wrapped_request(self: Any, method: str, url: str, *args: Any, **kwargs: Any) -> Any:
+        current_headers = kwargs.get("headers")
+        if isinstance(current_headers, dict) or current_headers is None:
+            kwargs["headers"] = inject_into_mapping(current_headers)
+
         provider = detect_provider(url)
         if provider is None:
             return _ORIGINAL_REQUEST(self, method, url, *args, **kwargs)
