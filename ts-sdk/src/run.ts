@@ -11,6 +11,20 @@ export async function observeRun<T>(
   fn: () => Promise<T> | T,
   options: ObserveRunOptions = {},
 ): Promise<T> {
+  const parentState = getRunState();
+  const parentMetadata = (parentState?.run.metadata ?? null) as Record<string, unknown> | null;
+  const inheritedTraceId = typeof parentMetadata?.trace_id === "string" ? parentMetadata.trace_id : null;
+  const inheritedRootRunId = typeof parentMetadata?.root_run_id === "string" ? parentMetadata.root_run_id : null;
+  const resolvedTraceId = options.traceId ?? inheritedTraceId ?? runIdLike();
+  const resolvedParentRunId = options.parentRunId ?? parentState?.run.id ?? null;
+  const resolvedRootRunId = options.rootRunId ?? inheritedRootRunId ?? parentState?.run.id ?? null;
+  const metadata: Record<string, unknown> = {
+    ...(options.metadata ?? {}),
+    trace_id: resolvedTraceId,
+    parent_run_id: resolvedParentRunId,
+    root_run_id: resolvedRootRunId,
+  };
+
   const run: RunRecord = {
     id: randomUUID(),
     project_id: options.projectId ?? DEFAULT_PROJECT_ID,
@@ -35,7 +49,7 @@ export async function observeRun<T>(
     tags: options.tags ?? null,
     experiment_id: options.experimentId ?? null,
     variant: options.variant ?? null,
-    metadata: options.metadata ?? null,
+    metadata,
   };
 
   const state: RunState = {
@@ -90,6 +104,10 @@ export async function observeRun<T>(
 
 export function isoNow(): string {
   return new Date().toISOString();
+}
+
+function runIdLike(): string {
+  return randomUUID();
 }
 
 export function scheduleLiveFlush(state: RunState | undefined = getRunState()): void {

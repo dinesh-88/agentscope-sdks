@@ -47,6 +47,9 @@ class observe_run:
         project_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
+        trace_id: str | None = None,
+        parent_run_id: str | None = None,
+        root_run_id: str | None = None,
         environment: str | None = None,
         tags: list[str] | None = None,
         experiment_id: str | None = None,
@@ -60,6 +63,9 @@ class observe_run:
         self.project_id = project_id or DEFAULT_PROJECT_ID
         self.user_id = user_id
         self.session_id = session_id
+        self.trace_id = trace_id
+        self.parent_run_id = parent_run_id
+        self.root_run_id = root_run_id
         self.environment = environment
         self.tags = tags
         self.experiment_id = experiment_id
@@ -72,6 +78,29 @@ class observe_run:
         self._state: _RunState | None = None
 
     def __enter__(self) -> Dict[str, Any]:
+        parent_state = _CURRENT_RUN.get()
+        parent_metadata: Dict[str, Any] = {}
+        if parent_state is not None:
+            raw_parent_metadata = parent_state.run.get("metadata")
+            if isinstance(raw_parent_metadata, dict):
+                parent_metadata = raw_parent_metadata
+
+        resolved_trace_id = (
+            self.trace_id
+            or parent_metadata.get("trace_id")
+            or str(uuid.uuid4())
+        )
+        resolved_parent_run_id = self.parent_run_id or (
+            parent_state.run["id"] if parent_state is not None else None
+        )
+        resolved_root_run_id = self.root_run_id or parent_metadata.get("root_run_id") or (
+            parent_state.run["id"] if parent_state is not None else None
+        )
+        metadata = dict(self.metadata or {})
+        metadata["trace_id"] = resolved_trace_id
+        metadata["parent_run_id"] = resolved_parent_run_id
+        metadata["root_run_id"] = resolved_root_run_id
+
         run = {
             "id": str(uuid.uuid4()),
             "project_id": self.project_id,
@@ -96,7 +125,7 @@ class observe_run:
             "tags": self.tags,
             "experiment_id": self.experiment_id,
             "variant": self.variant,
-            "metadata": self.metadata,
+            "metadata": metadata,
         }
         self._state = _RunState(run=run, exporter=self.exporter, live_stream_enabled=self.live_stream)
         self._run_token = _CURRENT_RUN.set(self._state)

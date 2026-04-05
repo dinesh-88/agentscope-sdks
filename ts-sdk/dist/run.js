@@ -8,6 +8,19 @@ const context_1 = require("./context");
 const exporter_1 = require("./exporter");
 const DEFAULT_PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 async function observeRun(workflowName, fn, options = {}) {
+    const parentState = (0, context_1.getRunState)();
+    const parentMetadata = (parentState?.run.metadata ?? null);
+    const inheritedTraceId = typeof parentMetadata?.trace_id === "string" ? parentMetadata.trace_id : null;
+    const inheritedRootRunId = typeof parentMetadata?.root_run_id === "string" ? parentMetadata.root_run_id : null;
+    const resolvedTraceId = options.traceId ?? inheritedTraceId ?? runIdLike();
+    const resolvedParentRunId = options.parentRunId ?? parentState?.run.id ?? null;
+    const resolvedRootRunId = options.rootRunId ?? inheritedRootRunId ?? parentState?.run.id ?? null;
+    const metadata = {
+        ...(options.metadata ?? {}),
+        trace_id: resolvedTraceId,
+        parent_run_id: resolvedParentRunId,
+        root_run_id: resolvedRootRunId,
+    };
     const run = {
         id: (0, node_crypto_1.randomUUID)(),
         project_id: options.projectId ?? DEFAULT_PROJECT_ID,
@@ -32,7 +45,7 @@ async function observeRun(workflowName, fn, options = {}) {
         tags: options.tags ?? null,
         experiment_id: options.experimentId ?? null,
         variant: options.variant ?? null,
-        metadata: options.metadata ?? null,
+        metadata,
     };
     const state = {
         run,
@@ -87,6 +100,9 @@ async function observeRun(workflowName, fn, options = {}) {
 }
 function isoNow() {
     return new Date().toISOString();
+}
+function runIdLike() {
+    return (0, node_crypto_1.randomUUID)();
 }
 function scheduleLiveFlush(state = (0, context_1.getRunState)()) {
     if (!state || !state.liveStreamEnabled) {

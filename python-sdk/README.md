@@ -44,6 +44,7 @@ with coding_agent_run(agent_name="codebot"):
 ## API
 
 - `observe_run(...)`
+  - Cross-run linkage params: `trace_id=...`, `parent_run_id=...`, `root_run_id=...`
 - `observe_span(...)`
 - `trace.auto(providers=None)`
 - `trace.log(message, level="info", span_id=None, metadata=None, timestamp=None)`

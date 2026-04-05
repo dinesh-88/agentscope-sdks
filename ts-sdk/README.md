@@ -46,6 +46,7 @@ This runs `examples/basic.js`, which emits a run with nested spans and artifacts
 ## API
 
 - `observeRun(workflowName, fn, options?)`
+  - Cross-run linkage options in `options`: `traceId`, `parentRunId`, `rootRunId`
 - `observeSpan(name, fn, options?)`
 - `addArtifact(kind, payload, spanId?)`
 - `trace.auto(providers?)`

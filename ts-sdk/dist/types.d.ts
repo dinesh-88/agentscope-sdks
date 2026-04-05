@@ -96,6 +96,9 @@ export interface ObserveRunOptions {
     projectId?: string;
     userId?: string;
     sessionId?: string;
+    traceId?: string;
+    parentRunId?: string;
+    rootRunId?: string;
     environment?: "prod" | "staging" | "dev";
     tags?: string[];
     experimentId?: string;
