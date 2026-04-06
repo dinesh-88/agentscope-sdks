@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, hostname, platform } from "node:os";
 import { join, resolve } from "node:path";
 
-const SDK_VERSION = "0.1.5";
+const SDK_VERSION = "0.1.6";
 const DEFAULT_BASE_URL = "http://localhost:8080";
 const DEFAULT_TIMEOUT_MS = 1500;
 const CONFIG_PATH = join(homedir(), ".agentscope", "config.json");

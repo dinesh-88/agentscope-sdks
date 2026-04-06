@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Literal
 
-SDK_VERSION = "0.1.13"
+SDK_VERSION = "0.1.14"
 DEFAULT_BASE_URL = "http://localhost:8080"
 DEFAULT_TIMEOUT = 1.5
 CONFIG_PATH = Path.home() / ".agentscope" / "config.json"
