@@ -1,4 +1,5 @@
 import type { AgentScopeClientOptions, IngestPayload } from "./types";
+import { getSdkTelemetry } from "./telemetry";
 
 export class AgentScopeClient {
   private readonly baseUrl: string;
@@ -14,6 +15,12 @@ export class AgentScopeClient {
     ).replace(/\/$/, "");
     this.apiKey = options.apiKey ?? process.env.AGENTSCOPE_API_KEY ?? "";
     this.timeoutMs = options.timeoutMs ?? 5000;
+
+    getSdkTelemetry({
+      baseUrl: this.baseUrl,
+      timeoutMs: this.timeoutMs,
+      enabled: options.telemetryEnabled,
+    }).capture("sdk_init");
   }
 
   async ingest(payload: IngestPayload): Promise<void> {

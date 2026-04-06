@@ -34,6 +34,16 @@ await observeRun("coding_agent", async () => {
 
 Set `AGENTSCOPE_API_BASE=http://localhost:8080` if the API is not running on the default host.
 
+## Anonymous SDK Telemetry (Optional)
+
+SDK usage telemetry is disabled by default. To opt in, set:
+
+```bash
+export AGENTSCOPE_TELEMETRY_ENABLED=true
+```
+
+When enabled, the SDK sends only anonymous events (`sdk_init`, `run_start`, `run_end`) to `POST /v1/telemetry` with an anonymized `project_id` stored in `~/.agentscope/config.json`. Prompt/output content and user payloads are never sent by this channel.
+
 ## Example Script
 
 ```bash

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
 from .exporter import TelemetryExporter
+from .telemetry import get_sdk_telemetry
 
 DEFAULT_PROJECT_ID = "00000000-0000-4000-8000-000000000001"
 
@@ -130,6 +131,7 @@ class observe_run:
         self._state = _RunState(run=run, exporter=self.exporter, live_stream_enabled=self.live_stream)
         self._run_token = _CURRENT_RUN.set(self._state)
         self._span_token = _SPAN_STACK.set(())
+        get_sdk_telemetry().capture("run_start")
         _safe_live_flush(self._state)
         return run
 
@@ -151,6 +153,11 @@ class observe_run:
                     "payload": {"error_type": exc_type.__name__ if exc_type else "Exception", "message": str(exc)},
                 }
             )
+
+        get_sdk_telemetry().capture(
+            "run_end",
+            exc_type.__name__ if exc_type is not None else None,
+        )
 
         try:
             self._state.exporter.export(self._state.run, self._state.spans, self._state.artifacts)

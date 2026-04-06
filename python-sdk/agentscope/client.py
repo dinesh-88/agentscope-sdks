@@ -4,12 +4,25 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict
 
+from .telemetry import get_sdk_telemetry
+
 
 class AgentScopeClient:
-    def __init__(self, base_url: str | None = None, api_key: str | None = None, timeout: float = 5.0) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 5.0,
+        telemetry_enabled: bool | None = None,
+    ) -> None:
         self.base_url = (base_url or os.getenv("AGENTSCOPE_API_BASE", "http://localhost:8080")).rstrip("/")
         self.api_key = api_key or os.getenv("AGENTSCOPE_API_KEY", "")
         self.timeout = timeout
+        get_sdk_telemetry(
+            base_url=self.base_url,
+            timeout=self.timeout,
+            enabled=telemetry_enabled,
+        ).capture("sdk_init")
 
     def ingest(self, payload: Dict[str, Any]) -> None:
         if not self.api_key:

@@ -107,6 +107,7 @@ export interface AgentScopeClientOptions {
   baseUrl?: string;
   apiKey?: string;
   timeoutMs?: number;
+  telemetryEnabled?: boolean;
 }
 
 export interface ObserveRunOptions {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { getRunState, withRunState, type RunState } from "./context";
 import { TelemetryExporter, flushPendingExports } from "./exporter";
+import { getSdkTelemetry } from "./telemetry";
 import type { ObserveRunOptions, RunRecord } from "./types";
 
 const DEFAULT_PROJECT_ID = "00000000-0000-4000-8000-000000000001";
@@ -63,6 +64,7 @@ export async function observeRun<T>(
 
   return withRunState(state, async () => {
     let callbackError: unknown;
+    getSdkTelemetry().capture("run_start");
     scheduleLiveFlush(state);
 
     try {
@@ -84,6 +86,7 @@ export async function observeRun<T>(
       throw error;
     } finally {
       run.ended_at = isoNow();
+      getSdkTelemetry().capture("run_end", resolveErrorType(callbackError));
       try {
         await state.exporter.export({
           run,
@@ -100,6 +103,16 @@ export async function observeRun<T>(
       }
     }
   });
+}
+
+function resolveErrorType(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+  if (error == null) {
+    return undefined;
+  }
+  return "Error";
 }
 
 export function isoNow(): string {

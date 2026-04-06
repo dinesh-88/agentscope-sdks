@@ -1,4 +1,5 @@
 export { AgentScopeClient } from "./client";
+export { getSdkTelemetry, SdkTelemetry } from "./telemetry";
 export { observeRun } from "./run";
 export { addArtifact, observeSpan, updateSpan } from "./span";
 export { TelemetryExporter, flushPendingExports as flush } from "./exporter";
