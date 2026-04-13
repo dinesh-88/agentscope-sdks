@@ -6,6 +6,7 @@ type FetchType = typeof globalThis.fetch;
 type RequestPayload = {
   model?: unknown;
   messages?: unknown;
+  input?: unknown;
   temperature?: unknown;
   tools?: unknown;
 };
@@ -59,7 +60,19 @@ export function instrumentFetch(options: FetchInstrumentationOptions = {}): () =
 
     return observeSpan(options.spanName ?? inferSpanName(requestDetails.url), async () => {
       if (llmRequest && captureBodies) {
-        addArtifact("llm.prompt", llmRequest);
+        const normalizedMessages = normalizeMessages(llmRequest.messages);
+        const extracted = extractSystemAndUserText(normalizedMessages, llmRequest.input);
+        addArtifact("llm.prompt", {
+          provider,
+          model: requestModel,
+          messages: normalizedMessages ?? llmRequest.messages,
+          input: llmRequest.input,
+          tools: llmRequest.tools,
+          temperature: llmRequest.temperature,
+          system_prompt: extracted.systemPrompt,
+          user_input: extracted.userInput,
+          payload: llmRequest,
+        });
       }
 
       const response = await originalFetch!(input, init);
@@ -250,12 +263,68 @@ function detectLlmRequest(details: {
     return {
       model: parsed.model,
       messages: parsed.messages,
+      input: parsed.input,
       tools: parsed.tools,
       temperature: parsed.temperature,
     };
   } catch {
     return null;
   }
+}
+
+function messageContentToText(content: unknown): string | null {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "text" in item) {
+          const text = (item as { text?: unknown }).text;
+          return typeof text === "string" ? text : null;
+        }
+        return null;
+      })
+      .filter((item): item is string => typeof item === "string" && item.length > 0);
+    if (parts.length > 0) return parts.join("\n");
+  }
+  return null;
+}
+
+function normalizeMessages(raw: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.filter((item) => item && typeof item === "object") as Array<Record<string, unknown>>;
+}
+
+function extractSystemAndUserText(
+  messages: Array<Record<string, unknown>> | null,
+  input: unknown,
+): { systemPrompt?: string | null; userInput?: string | null } {
+  if (messages && messages.length > 0) {
+    const systemParts: string[] = [];
+    const userParts: string[] = [];
+    for (const message of messages) {
+      const role = typeof message.role === "string" ? message.role.toLowerCase() : "";
+      const content = messageContentToText(message.content);
+      if (!content) continue;
+      if (role === "system") systemParts.push(content);
+      if (role === "user") userParts.push(content);
+    }
+    return {
+      systemPrompt: systemParts.length > 0 ? systemParts.join("\n") : null,
+      userInput: userParts.length > 0 ? userParts.join("\n") : null,
+    };
+  }
+
+  if (typeof input === "string") {
+    return { userInput: input, systemPrompt: null };
+  }
+
+  const inputMessages = normalizeMessages(input);
+  if (inputMessages) {
+    return extractSystemAndUserText(inputMessages, null);
+  }
+
+  return { systemPrompt: null, userInput: null };
 }
 
 async function safeReadJson(response: Response): Promise<ResponsePayload | null> {

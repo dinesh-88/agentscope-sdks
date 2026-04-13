@@ -113,6 +113,52 @@ def _extract_prompt_fields(payload: Any) -> tuple[Any, Any, Any]:
     return messages, prompt, payload.get("input")
 
 
+def _message_content_to_text(content: Any) -> str | None:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts) if parts else None
+    return None
+
+
+def _normalize_messages(raw: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(raw, list):
+        return None
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _extract_system_user_text(messages: Any, input_value: Any) -> tuple[str | None, str | None]:
+    normalized = _normalize_messages(messages)
+    if normalized:
+        system_parts: list[str] = []
+        user_parts: list[str] = []
+        for message in normalized:
+            role = str(message.get("role", "")).lower()
+            content = _message_content_to_text(message.get("content"))
+            if not content:
+                continue
+            if role == "system":
+                system_parts.append(content)
+            if role == "user":
+                user_parts.append(content)
+        return ("\n".join(system_parts) if system_parts else None, "\n".join(user_parts) if user_parts else None)
+    if isinstance(input_value, str):
+        return None, input_value
+    normalized_input = _normalize_messages(input_value)
+    if normalized_input:
+        return _extract_system_user_text(normalized_input, None)
+    return None, None
+
+
 def trace_http_llm_call(
     provider: str,
     url: str,
@@ -125,6 +171,7 @@ def trace_http_llm_call(
         span["endpoint_url"] = url
         span["model"] = payload.get("model") if isinstance(payload, dict) else None
         messages, prompt, input_value = _extract_prompt_fields(payload)
+        system_prompt, user_input = _extract_system_user_text(messages, input_value)
 
         _append_artifact(
             span=span,
@@ -136,6 +183,8 @@ def trace_http_llm_call(
                 "messages": messages,
                 "prompt": prompt,
                 "input": input_value,
+                "system_prompt": system_prompt,
+                "user_input": user_input,
                 "payload": payload,
             },
         )

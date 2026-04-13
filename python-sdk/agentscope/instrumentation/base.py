@@ -229,6 +229,18 @@ class BaseInstrumentor:
         if run_state is None:
             return
 
+        system_prompt = None
+        user_input = None
+        if isinstance(record.input, dict):
+            messages = record.input.get("messages")
+            prompt = record.input.get("prompt")
+            input_value = record.input.get("input")
+            system_prompt, user_input = _extract_system_user_text(messages, input_value)
+            if system_prompt is None and isinstance(prompt, str):
+                system_prompt = prompt
+        else:
+            system_prompt, user_input = _extract_system_user_text(None, record.input)
+
         sources = trace_context.get_all()
         if sources:
             run_state.artifacts.append(
@@ -256,6 +268,8 @@ class BaseInstrumentor:
                     "provider": record.provider,
                     "model": record.model,
                     "input": record.input,
+                    "system_prompt": system_prompt,
+                    "user_input": user_input,
                 },
             }
         )
@@ -312,3 +326,49 @@ class BaseInstrumentor:
                     },
                 }
             )
+
+
+def _message_content_to_text(content: Any) -> str | None:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts) if parts else None
+    return None
+
+
+def _normalize_messages(raw: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(raw, list):
+        return None
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _extract_system_user_text(messages: Any, input_value: Any) -> tuple[str | None, str | None]:
+    normalized = _normalize_messages(messages)
+    if normalized:
+        system_parts: list[str] = []
+        user_parts: list[str] = []
+        for message in normalized:
+            role = str(message.get("role", "")).lower()
+            content = _message_content_to_text(message.get("content"))
+            if not content:
+                continue
+            if role == "system":
+                system_parts.append(content)
+            if role == "user":
+                user_parts.append(content)
+        return ("\n".join(system_parts) if system_parts else None, "\n".join(user_parts) if user_parts else None)
+    if isinstance(input_value, str):
+        return None, input_value
+    normalized_input = _normalize_messages(input_value)
+    if normalized_input:
+        return _extract_system_user_text(normalized_input, None)
+    return None, None
