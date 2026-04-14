@@ -97,10 +97,13 @@ class observe_run:
         resolved_root_run_id = self.root_run_id or parent_metadata.get("root_run_id") or (
             parent_state.run["id"] if parent_state is not None else None
         )
+        telemetry = get_sdk_telemetry()
         metadata = dict(self.metadata or {})
         metadata["trace_id"] = resolved_trace_id
         metadata["parent_run_id"] = resolved_parent_run_id
         metadata["root_run_id"] = resolved_root_run_id
+        metadata["telemetry_source"] = "sdk_python"
+        metadata["telemetry_project_id"] = telemetry.project_id()
 
         run = {
             "id": str(uuid.uuid4()),
@@ -131,7 +134,7 @@ class observe_run:
         self._state = _RunState(run=run, exporter=self.exporter, live_stream_enabled=self.live_stream)
         self._run_token = _CURRENT_RUN.set(self._state)
         self._span_token = _SPAN_STACK.set(())
-        get_sdk_telemetry().capture("run_start")
+        telemetry.capture("run_start")
         _safe_live_flush(self._state)
         return run
 

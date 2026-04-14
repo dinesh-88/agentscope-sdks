@@ -24,6 +24,8 @@ export async function observeRun<T>(
     trace_id: resolvedTraceId,
     parent_run_id: resolvedParentRunId,
     root_run_id: resolvedRootRunId,
+    telemetry_source: "sdk_ts",
+    telemetry_project_id: getSdkTelemetry().projectHash(),
   };
 
   const run: RunRecord = {

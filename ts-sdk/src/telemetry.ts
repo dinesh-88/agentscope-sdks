@@ -79,6 +79,10 @@ export class SdkTelemetry {
     void this.send(payload);
   }
 
+  projectHash(): string {
+    return this.ensureProjectId();
+  }
+
   private async send(payload: TelemetryEventPayload): Promise<void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);

@@ -94,6 +94,9 @@ class SdkTelemetry:
         self._session_override = enabled
         _persist_consent(enabled)
 
+    def project_id(self) -> str:
+        return self._ensure_project_id()
+
     def status_message(self, *, allow_prompt: bool) -> str:
         enabled = self.is_enabled(allow_prompt=allow_prompt)
         return "Telemetry: enabled (anonymous)" if enabled else "Telemetry: disabled"
