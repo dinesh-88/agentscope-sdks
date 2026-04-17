@@ -139,3 +139,7 @@ with coding_agent_run(agent_name="codebot"):
 - `read_file(path, encoding="utf-8")`
 - `write_file(path, content, encoding="utf-8")`
 - `run_command(command, cwd=None, env=None, check=False, shell=None)`
+
+## License
+
+`agentscope-sdk` is licensed under the MIT License. See the `LICENSE` file in the repository root for details.

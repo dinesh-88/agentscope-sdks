@@ -1,0 +1,115 @@
+name: SDK Contract Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BACKEND_IMAGE: ${{ vars.AGENTSCOPE_BACKEND_IMAGE }}
+  BACKEND_PORT: "18080"
+  AGENTSCOPE_API_KEY: "contract_test_key"
+
+jobs:
+  endpoint-contract:
+    name: Validate backend endpoints against pinned image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure backend image is configured
+        run: |
+          if [ -z "${BACKEND_IMAGE}" ]; then
+            echo "Set repository variable AGENTSCOPE_BACKEND_IMAGE (example: ghcr.io/<org>/agentscope-backend:v0.1.16)"
+            exit 1
+          fi
+
+      - name: Start backend
+        run: |
+          docker run -d --rm \
+            --name agentscope-backend \
+            -p "${BACKEND_PORT}:8080" \
+            -e AGENTSCOPE_API_KEY="${AGENTSCOPE_API_KEY}" \
+            "${BACKEND_IMAGE}"
+
+      - name: Wait for backend to accept connections
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sS -o /dev/null "http://localhost:${BACKEND_PORT}"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not start in time"
+          exit 1
+
+      - name: Verify /v1/ingest endpoint exists
+        run: |
+          code="$(curl -sS -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-AgentScope-API-Key: ${AGENTSCOPE_API_KEY}" \
+            -d '{}' \
+            "http://localhost:${BACKEND_PORT}/v1/ingest")"
+          case "$code" in
+            200|201|202|204|400|401|403|422) ;;
+            *) echo "Unexpected status from /v1/ingest: $code"; exit 1 ;;
+          esac
+
+      - name: Verify /v1/telemetry endpoint exists
+        run: |
+          code="$(curl -sS -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"event":"sdk_init","project_id":"contract-check"}' \
+            "http://localhost:${BACKEND_PORT}/v1/telemetry")"
+          case "$code" in
+            200|201|202|204|400|401|403|422) ;;
+            *) echo "Unexpected status from /v1/telemetry: $code"; exit 1 ;;
+          esac
+
+      - name: Stop backend
+        if: always()
+        run: docker stop agentscope-backend || true
+
+  sdk-builds:
+    name: SDK packaging sanity
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        sdk:
+          - python
+          - ts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        if: matrix.sdk == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Python package
+        if: matrix.sdk == 'python'
+        working-directory: python-sdk
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+          python -m build
+
+      - name: Setup Node
+        if: matrix.sdk == 'ts'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build TypeScript package
+        if: matrix.sdk == 'ts'
+        working-directory: ts-sdk
+        run: |
+          npm ci
+          npm run build
